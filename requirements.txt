@@ -1,6 +1,6 @@
 openai>=1.0.0
 python-dotenv
-pymupdf
+pypdfium2
 numpy
 torch
 transformers

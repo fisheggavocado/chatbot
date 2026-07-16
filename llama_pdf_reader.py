@@ -8,7 +8,7 @@
 from pathlib import Path
 from typing import Iterator, List, Tuple
 
-import fitz  # PyMuPDF
+import pypdfium2 as pdfium
 from llama_index.core import Document
 from llama_index.core.readers.base import BaseReader
 
@@ -37,7 +37,7 @@ class VisionPDFReader(BaseReader):
         start_page를 지정하면 이전에 처리한 페이지는 건너뛰고 그 다음부터 이어서 처리한다 (재개용).
         """
         pdf_path = Path(pdf_path)
-        doc = fitz.open(pdf_path)
+        doc = pdfium.PdfDocument(pdf_path)
 
         for page_index in range(start_page, len(doc)):
             page = doc[page_index]
@@ -54,6 +54,8 @@ class VisionPDFReader(BaseReader):
                 text = f"{extracted}\n\n{image_description}" if image_description else extracted
             else:
                 text = extracted
+
+            page.close()
 
             document = Document(
                 text=text, metadata={"source": pdf_path.name, "page": page_index + 1}
