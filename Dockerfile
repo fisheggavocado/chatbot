@@ -6,8 +6,11 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # 의존성 레이어를 먼저 캐시한다 (코드만 바뀌면 재설치 생략)
+# torch는 CUDA 12용 빌드(cu128)로 먼저 설치한다 — PyPI 기본 torch는 CUDA 13용이라
+# CUDA 12.x 드라이버 노드(gcube 최대 12.9)에서 동작하지 않는다.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu128 \
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
