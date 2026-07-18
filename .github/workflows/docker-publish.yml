@@ -1,0 +1,38 @@
+# main 브랜치에 push할 때마다 Dockerfile로 이미지를 빌드해
+# GitHub Container Registry(ghcr.io)에 올린다.
+# 결과 이미지: ghcr.io/<계정>/<repo>:latest  (예: ghcr.io/fisheggavocado/chatbottest:latest)
+
+name: Build and push Docker image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # torch CUDA 이미지가 커서, 러너에 기본 설치된 불필요한 대용량 도구를 지워 디스크를 확보한다.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
