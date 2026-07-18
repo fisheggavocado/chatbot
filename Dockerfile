@@ -15,6 +15,9 @@ COPY . .
 ENV OUTPUT_DIR=/data/output \
     HF_HOME=/data/hf_cache
 
+# gcube 등 배포 플랫폼이 이미지 메타데이터에서 서비스 포트를 읽을 수 있도록 선언한다.
+EXPOSE 8000
+
 # 기본 명령: HF Dataset의 PDF 전체를 처리 후 인덱스를 HF에 업로드.
 # (워크로드 설정의 "컨테이너 명령"란에 값을 넣으면 이 기본값 대신 그 명령이 실행된다.)
 CMD ["python", "main.py", "--use-hf"]
