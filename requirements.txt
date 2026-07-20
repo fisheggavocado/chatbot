@@ -3,7 +3,7 @@ python-dotenv
 pypdfium2
 numpy
 torch
-transformers
+transformers<5.0.0  # FlagEmbedding 1.4.0의 reranker가 transformers 5.x에서 제거된 tokenizer.prepare_for_model()을 호출해 깨짐
 FlagEmbedding
 rank_bm25
 kiwipiepy

@@ -13,16 +13,20 @@ from llm import get_structured_llm
 from observability import log_event
 from state import IntentDecision, WizardState
 
-FAQ_MARKERS = ("란?", "이란", "뭐야", "무엇", "정의가", "차이가", "차이는")
+FAQ_MARKERS = ("란?", "이란", "뭐야", "무엇", "정의가", "머야", "차이가", "차이는")
 DESIGN_MARKERS = ("설계", "만들고 싶", "만들어", "구성해", "구축", "파이프라인 추천", "아키텍처", "추천해")
+# 강의 자료가 "에이전트 설계"뿐 아니라 Hugging Face 생태계·LLM/챗봇 구축 전반을 다루므로 넓게 잡는다.
 DOMAIN_KEYWORDS = (
-    "agent", "에이전트", "llm", "rag", "임베딩", "embedding", "벡터", "vector", "bm25",
+    "agent", "에이전트", "llm", "sllm", "rag", "임베딩", "embedding", "벡터", "vector", "bm25",
     "리트리버", "retriever", "langgraph", "langchain", "가드레일", "guardrail", "reAct",
     "react", "프롬프트", "prompt", "파이프라인", "체인", "chain", "멀티 에이전트", "supervisor",
+    "허깅페이스", "hugging face", "huggingface", "허브", "hub", "모델", "model", "데이터셋", "dataset",
+    "토크나이저", "tokenizer", "트랜스포머", "transformer", "파인튜닝", "fine-tuning", "챗봇", "chatbot", "mcp",
+    "openai", "gpt", "ai",
 )
 OUT_OF_SCOPE_MESSAGE = (
-    "이 챗봇은 AI 에이전트 설계/개념 강의 자료 범위 안에서만 답할 수 있어요. "
-    "강의 관련 용어 설명이나 에이전트 파이프라인 설계 상담을 요청해 주세요."
+    "이 챗봇은 AI 챗봇 구축/에이전트 설계 강의 자료 범위 안에서만 답할 수 있어요. "
+    "강의 관련 용어 설명이나 에이전트·파이프라인 설계 상담을 요청해 주세요."
 )
 
 
@@ -32,13 +36,15 @@ def _rule_based_intent(text: str) -> str | None:
     has_faq = any(marker in text for marker in FAQ_MARKERS)
     has_domain = any(kw.lower() in lowered for kw in DOMAIN_KEYWORDS)
 
-    if has_design:
+    # design/faq 마커든 도메인 키워드가 함께 있어야 확정한다 — "추천해줘"/"만들어줘" 같은 일반 동사
+    # 어미만으로 무관한 발화("저녁 메뉴 추천해줘")가 design으로 오분류되는 것을 막는다.
+    if has_design and has_domain:
         return "design"
     if has_faq and has_domain:
         return "faq"
     if not has_domain:
         return "out_of_scope"
-    return None  # 애매함 -> LLM 폴백
+    return None  # 도메인은 맞는데 faq/design 마커가 애매함 -> LLM 폴백
 
 
 def coordinator(

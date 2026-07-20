@@ -56,20 +56,32 @@ CUDA가 있는 GPU 클라우드에서는 자동으로 GPU를 쓴다. `OUTPUT_DIR
   `temperature` 대신 `reasoning_effort`를 사용하도록 변경.
 - **2026-07-20**: `WizardState` 체크포인트를 임베딩 인덱스와 같은 패턴으로 HF Dataset에 백업하도록
   `hf_storage.py`에 `upload_checkpoint_to_hf`/`restore_checkpoint_from_hf`(경로: `checkpoints/`) 추가하고
-  `graph.py`(시작 시 자동 복원, WAL 체크포인트 후 업로드)·`app.py`(매 턴 종료 후 백업 호출)에 연결. 실제
-  HF repo로 왕복 테스트한 결과 코드 경로는 정상 동작하나, 현재 `.env`의 `HF_TOKEN`이 `RogersHun/lecture_pdf`에
-  대한 쓰기 권한이 없어(`403 Forbidden`) 실제 업로드는 실패함을 확인.
-- **2026-07-20**: 위 문제를 일단 읽기(`HF_TOKEN`/`HF_REPO_ID`)와 쓰기(`HF_TOKEN_ORG`/`HF_REPO_ID_ORG`)
-  credential 분리로 해결했다가, 이후 `HF_REPO_ID`를 쓰기 권한이 있는 새 repo(`yeardream-toy-project/lecture_pdf`,
-  PDF 40개 보유)로 교체하면서 ORG 분리가 불필요해져 되돌림 — `config.py`/`hf_storage.py`/`main.py`를 전부
-  단일 `HF_TOKEN`/`HF_REPO_ID`만 쓰도록 원복. 다만 이 시점의 `HF_TOKEN`으로 실제 업로드 왕복 테스트를 했더니
-  이 repo에서도 동일하게 `403 Forbidden`이 남을 확인.
+  `graph.py`(시작 시 자동 복원, WAL 체크포인트 후 업로드)·`app.py`(매 턴 종료 후 백업 호출)에 연결.
 - **2026-07-20**: `HF_TOKEN`을 write 권한이 있는 새 토큰으로 교체 → 업로드→삭제 왕복 테스트 성공
   (`yeardream-toy-project/lecture_pdf`에 실제 쓰기 가능 확인됨). 임베딩 인덱스 백업·consultant_bot 체크포인트
-  백업이 이제 정상 동작할 것으로 예상.
+  백업이 정상 동작함을 확인.
+- **2026-07-20**: 실제 배관(plumbing) 검증을 위해 `../test/`(별도 폴더)에 PDF 1개 격리 임베딩
+  (`embed_one_pdf.py`, 비전 API 없이 텍스트 전용·CPU) + 자동 시나리오 테스트(`run_scenarios.py`: FAQ /
+  out_of_scope / design 3턴 위저드) 하네스를 만들고 실제로 돌려 3개 버그를 찾아 **본 코드에** 수정:
+  - `coordinator.py`: `DESIGN_MARKERS`("추천해" 등)가 도메인 키워드 없이도 즉시 매칭되어 "저녁 메뉴
+    추천해줘" 같은 무관한 발화가 `design`으로, 도메인 키워드 목록이 좁아 "허깅페이스가 뭐야?"가
+    `out_of_scope`로 오분류되던 버그 → design/faq 마커에 도메인 키워드 존재를 AND 조건으로 요구하도록
+    수정하고, `DOMAIN_KEYWORDS`를 강의 자료의 실제 범위(Hugging Face 생태계·LLM/챗봇 구축 전반)에 맞춰 확장
+  - `retrieval.py`: `QueryFusionRetriever`가 `num_queries=1`(질의 재생성 없음)이라 실제로는 안 쓰는데도
+    생성자에서 `Settings.llm`을 즉시 해석하려다 `llama-index-llms-openai` 미설치로 `ImportError` 발생 →
+    실제 호출되지 않는 자리이므로 `llama_index.core.llms.MockLLM`로 채워 해결(불필요한 의존성 추가 없음)
+  - 루트 `requirements.txt`: `transformers`가 버전 미고정이라 5.14.0이 설치돼 있었는데, `FlagEmbedding`의
+    reranker가 5.x에서 제거된 `tokenizer.prepare_for_model()`을 호출해 크래시 → `transformers<5.0.0`으로
+    고정, 4.57.6으로 재설치(부수적으로 `huggingface_hub`도 0.36.2로 내려갔으나 `hf_storage.py` 정상 동작 확인)
+  - 부수적으로 Windows 콘솔(cp949)이 LLM 응답에 흔한 em-dash 등 일부 유니코드를 인코딩 못 해 `print()`가
+    죽을 수 있던 문제도 발견해 `app.py`에 UTF-8 출력 강제 추가
+  - 수정 후 재실행 결과: FAQ(`intent=faq`, 출처 7곳 인용) / out_of_scope(검색 0회) / design 위저드
+    (`interrupt` 3턴 전부 완주, `stage=done`) 모두 정상 동작 확인, guardrail 재시도 0회
 
 ## 알려진 한계 / 다음 단계
 
 - **시스템 프롬프트(페르소나) 없음**: 각 노드가 개별 목적의 프롬프트만 사용하고, 봇 전체의 톤/역할을 정하는
   시스템 메시지는 없다 (범위 제한은 Coordinator의 규칙/LLM 분류가 대신 담당).
 - 캐시(`cache.py`)에 무효화 로직 없음, E2E/LLM-as-Judge 평가 하네스·외부 트레이싱 대시보드 미구현.
+- 통합 테스트(`../test/`)는 PDF 1개짜리 인덱스 기준이라 커버리지가 제한적 — 자세한 실행법은
+  [`../test/README.md`](../test/README.md) 참고.

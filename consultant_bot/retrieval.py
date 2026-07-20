@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from langchain_core.tools import tool  # noqa: E402
 from llama_index.core import Settings, StorageContext, load_index_from_storage  # noqa: E402
+from llama_index.core.llms import MockLLM  # noqa: E402
 from llama_index.core.retrievers import QueryFusionRetriever  # noqa: E402
 
 from config import CANDIDATE_TOP_K, HF_REPO_ID, OUTPUT_DIR, RERANK_TOP_K  # noqa: E402
@@ -25,6 +26,12 @@ from state import Evidence  # noqa: E402
 
 # 인덱스를 저장할 때와 동일한 임베딩 모델을 지정해야 질의 임베딩 차원이 맞는다.
 Settings.embed_model = BGEM3Embedding()
+
+# QueryFusionRetriever는 num_queries=1(질의 재생성 없음)이라도 생성자에서 Settings.llm을 즉시 참조한다.
+# 명시적으로 지정 안 하면 llama_index가 기본 OpenAI LLM을 자동 임포트하려다 llama-index-llms-openai
+# 패키지가 없어 ImportError로 죽는다. 실제로 호출되지는 않으므로(질의 재생성을 안 하니) 진짜 LLM 대신
+# MockLLM로 채워 그 자동 해석 자체를 건너뛴다 (실제 답변 생성은 llm.py의 langchain ChatOpenAI가 담당).
+Settings.llm = MockLLM()
 
 _index = None
 _retriever = None
@@ -42,7 +49,7 @@ def _ensure_index_available() -> None:
             f"'{OUTPUT_DIR}'에 인덱스가 없고 HF_REPO_ID도 설정되지 않았습니다. "
             "먼저 python main.py로 인덱스를 만들거나, .env에 HF_REPO_ID를 설정하세요."
         )
-    print(f"[retrieval] 로컬 인덱스 없음 — Hugging Face Dataset({HF_REPO_ID})에서 복원 시도...")
+    print(f"[retrieval] 로컬 인덱스 없음 - Hugging Face Dataset({HF_REPO_ID})에서 복원 시도...")
     restored = restore_output_from_hf(OUTPUT_DIR)
     if not restored:
         raise RuntimeError(

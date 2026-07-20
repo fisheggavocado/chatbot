@@ -13,6 +13,11 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
+# Windows 콘솔의 기본 코드페이지(cp949)는 em-dash 등 일부 유니코드 문자를 인코딩하지 못해 print()가
+# 죽을 수 있다. LLM이 생성하는 답변에는 이런 문자가 흔히 섞여 나오므로, 출력 인코딩을 UTF-8로 강제한다.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from langchain_core.messages import HumanMessage  # noqa: E402

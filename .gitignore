@@ -9,6 +9,8 @@ venv/
 
 # 생성되는 인덱스·체크포인트 (용량 크고 재생성 가능)
 output/
+output_test/
+test/output_test/
 
 # HF Dataset에서 동기화한 PDF 로컬 캐시
 hf_pdfs/
