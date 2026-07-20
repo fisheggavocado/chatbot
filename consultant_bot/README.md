@@ -67,10 +67,13 @@ CUDA가 있는 GPU 클라우드에서는 자동으로 GPU를 쓴다. `OUTPUT_DIR
 
 ## 알려진 한계 / 다음 단계
 
-- **HF 업로드는 `HF_REPO_ID`에 쓰기 권한이 있는 토큰을 전제로 함**: 이전에 읽기 전용 repo(`RogersHun/lecture_pdf`)
-  로 업로드 시도 시 `403 Forbidden`이 났던 적이 있음. 현재 repo(`yeardream-toy-project/lecture_pdf`)는 쓰기
-  권한이 있는 것으로 확인됐으나, 만약 `HF_REPO_ID`를 다시 읽기 전용 repo로 바꾸면 `upload_output_to_hf`/
-  `upload_checkpoint_to_hf`가 다시 403으로 실패할 수 있음(예외는 삼켜서 대화/처리는 안 막힘).
+- **현재 `HF_TOKEN`은 `yeardream-toy-project/lecture_pdf`에도 쓰기 권한이 없음 (확인됨, 미해결)**: 새 repo로
+  바꾼 뒤 업로드 왕복(작은 테스트 파일 업로드→삭제)을 실제로 실행해봤더니 이전 `RogersHun/lecture_pdf`와
+  동일하게 `403 Forbidden`("pass create_pr=1 as a query parameter to create a Pull Request")로 실패함.
+  즉 이 토큰은 이 org repo에 대해 PR 없이 바로 push할 권한이 없는 상태 — HF 계정에서 이 repo에 대한
+  write role(또는 direct commit 권한)을 부여받아야 `upload_output_to_hf`/`upload_checkpoint_to_hf`가 실제로
+  동작한다. 그 전까지는 gcube에서 `main.py --use-hf`를 완주해도 **로컬/컨테이너에는 인덱스가 만들어지지만
+  HF 백업은 조용히 실패**하고(예외를 삼켜 처리 자체는 안 막힘), 컨테이너가 죽으면 그 진행분이 유실된다.
 - **시스템 프롬프트(페르소나) 없음**: 각 노드가 개별 목적의 프롬프트만 사용하고, 봇 전체의 톤/역할을 정하는
   시스템 메시지는 없다 (범위 제한은 Coordinator의 규칙/LLM 분류가 대신 담당).
 - 캐시(`cache.py`)에 무효화 로직 없음, E2E/LLM-as-Judge 평가 하네스·외부 트레이싱 대시보드 미구현.
