@@ -11,7 +11,7 @@ from langgraph.types import Command
 
 from cache import faq_cache
 from chat_utils import last_human_text
-from llm import get_structured_llm
+from llm import OUT_OF_CONTEXT_MESSAGE, get_structured_llm
 from observability import log_event
 from state import GuardrailVerdict, WizardState
 
@@ -26,6 +26,8 @@ VERDICT_PROMPT = """아래 응답이 근거(evidence)에 없는 내용을 확정
 """
 
 MAX_GUARDRAIL_RETRIES = 1
+# 위저드(design) 경로 전용 대체 문구. FAQ 경로는 llm.OUT_OF_CONTEXT_MESSAGE로 통일해
+# faq_agent.py의 근거 부족 메시지와 문구가 갈라지지 않게 한다.
 SAFE_FALLBACK_TEXT = "이 부분은 강의 자료 근거가 충분하지 않아 확정적으로 답변드리기 어렵습니다. 자료에서 확인이 필요합니다."
 
 
@@ -46,9 +48,15 @@ def guardrail(
         else str(state.get("presenter_output"))
     )
 
-    verdict: GuardrailVerdict = get_structured_llm(GuardrailVerdict).invoke(
-        VERDICT_PROMPT.format(output=output_text, evidence=_format_evidence(state.get("evidence", [])))
-    )
+    if is_faq_path and output_text.strip() == OUT_OF_CONTEXT_MESSAGE:
+        # "모른다"는 정직한 안내 자체는 근거를 벗어난 확정적 주장이 아니다. 그런데 LLM judge에게 맡기면
+        # "질문이 없다고 확정적으로 단언한다"는 표면적 문구만 보고 종종 오판해(회귀 테스트로 실제 확인됨)
+        # 불필요한 재검색 루프를 태운다 — 이 판정은 LLM 판단이 아니라 코드로 고정한다.
+        verdict = GuardrailVerdict(passed=True, reason="정직한 안내 문구는 확정적 주장이 아니므로 코드로 즉시 통과")
+    else:
+        verdict = get_structured_llm(GuardrailVerdict).invoke(
+            VERDICT_PROMPT.format(output=output_text, evidence=_format_evidence(state.get("evidence", [])))
+        )
     log_event(thread_id, "guardrail", "verdict", {"passed": verdict.passed, "reason": verdict.reason, "retries": retries})
 
     if verdict.passed:
@@ -77,7 +85,7 @@ def guardrail(
             goto=END,
             update={
                 "guardrail_retries": 0,
-                "messages": [AIMessage(content=SAFE_FALLBACK_TEXT)],
+                "messages": [AIMessage(content=OUT_OF_CONTEXT_MESSAGE)],
                 "trace": ["guardrail: 재실패 -> 안전한 대체 응답"],
             },
         )

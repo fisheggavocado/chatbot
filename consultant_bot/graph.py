@@ -96,4 +96,8 @@ def make_run_config(thread_id: str) -> dict:
         "configurable": {"thread_id": thread_id},
         "recursion_limit": RECURSION_LIMIT,
         "callbacks": [TraceCallbackHandler(thread_id)],
+        # LangSmith가 켜져 있으면(observability.LANGSMITH_ENABLED) 이 태그/메타데이터로 웹 대시보드에서
+        # thread_id 기준 필터링이 가능해진다. 꺼져 있으면 LangChain이 그냥 무시하므로 조건 분기가 필요 없다.
+        "tags": [f"thread:{thread_id}"],
+        "metadata": {"thread_id": thread_id},
     }

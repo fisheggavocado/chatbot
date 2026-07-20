@@ -7,30 +7,28 @@
 
 from typing import Literal
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END
 from langgraph.types import Command
 
 from cache import faq_cache
 from chat_utils import last_human_text
-from llm import get_llm
+from llm import OUT_OF_CONTEXT_MESSAGE, SYSTEM_PROMPT, get_llm
 from observability import log_event
 from react_loop import run_bounded_react
 from state import WizardState
 
 MAX_STEPS = 2
 
-ANSWER_PROMPT = """아래 근거만 사용해 질문에 답하세요. 반드시 "정의 -> 사용 상황 -> 출처(PDF 파일명, 페이지)" 순서로,
-근거에 없는 내용은 절대 추가하지 마세요.
+ANSWER_PROMPT = """아래 근거만 사용해 질문에 답하세요. "정의 -> 사용 상황 -> 출처" 순서로 구성하고,
+마지막 문장은 반드시 [출처: 파일명 p.페이지] 형식으로 끝내세요. 근거에 없는 내용은 절대 추가하지 마세요.
 
 질문: {question}
 
 근거:
 {evidence}
 """
-
-FALLBACK_MESSAGE = "강의 자료에서 이 질문에 대한 근거를 충분히 찾지 못했습니다. 자료에서 확인이 어려운 내용입니다."
 
 
 def _format_evidence(evidence: list[dict]) -> str:
@@ -63,10 +61,13 @@ def faq_agent(state: WizardState, config: RunnableConfig) -> Command[Literal["gu
 
     if result.sufficient:
         answer = get_llm().invoke(
-            ANSWER_PROMPT.format(question=question, evidence=_format_evidence(result.evidence))
+            [
+                SystemMessage(content=SYSTEM_PROMPT),
+                HumanMessage(content=ANSWER_PROMPT.format(question=question, evidence=_format_evidence(result.evidence))),
+            ]
         ).content
     else:
-        answer = FALLBACK_MESSAGE
+        answer = OUT_OF_CONTEXT_MESSAGE
 
     return Command(
         goto="guardrail",

@@ -9,9 +9,16 @@
 #    대화 체크포인트(WizardState)도 같은 방식으로 HF_REPO_ID의 checkpoints/ 경로에서 자동 복원되고,
 #    매 턴이 끝날 때마다 그 경로로 다시 백업된다.)
 
-import sys
-from pathlib import Path
-from uuid import uuid4
+import os
+
+# torch/BGE-M3/리랭커/kiwipiepy가 각자 자체 OpenMP 런타임(libiomp5md.dll 등)을 들고 있어, 같은 프로세스에서
+# 전부 로드되면(Windows에서 특히) "OMP: Error #15" 세그멘테이션 폴트로 죽는다. graph.py를 import하기 전에
+# 반드시 설정해야 해서 다른 import보다 앞에 둔다.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+from uuid import uuid4  # noqa: E402
 
 # Windows 콘솔의 기본 코드페이지(cp949)는 em-dash 등 일부 유니코드 문자를 인코딩하지 못해 print()가
 # 죽을 수 있다. LLM이 생성하는 답변에는 이런 문자가 흔히 섞여 나오므로, 출력 인코딩을 UTF-8로 강제한다.

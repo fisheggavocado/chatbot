@@ -4,3 +4,7 @@ langgraph>=0.2.60
 langgraph-checkpoint-sqlite>=2.0.0
 langchain-core>=0.3.0
 langchain-openai>=0.2.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+# LangSmith 외부 트레이싱 대시보드 (선택 - .env에 LANGCHAIN_API_KEY가 있을 때만 observability.py가 활성화함)
+langsmith>=0.1.100

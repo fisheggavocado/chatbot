@@ -1,14 +1,20 @@
-# 관찰가능성(observability) 모듈 — 외부 트레이싱 서비스 없이 파일 기반으로 "어떤 노드가 언제 무엇을 했는지" 재구성한다.
+# 관찰가능성(observability) 모듈 — 파일 기반 트레이스(항상 켜짐) + 선택적 LangSmith 외부 대시보드 연동.
 #
-# 두 축으로 구성:
+# 세 축으로 구성:
 #   1) TraceCallbackHandler - LangChain/LangGraph의 체인·tool 호출을 자동으로 훅해 콘솔에 사람이 읽을 수 있게 출력
 #   2) log_event()          - 콜백으로 안 잡히는 지점(라우팅 결정, react_loop 정지 사유, guardrail 판정,
 #                              interrupt 진입/재개)까지 OUTPUT_DIR/traces/{thread_id}.jsonl에 기록
+#   3) configure_langsmith() - .env에 LANGCHAIN_API_KEY가 있으면 LangSmith 웹 대시보드 트레이싱을 켠다.
+#                              LangChain/LangGraph는 이 두 환경변수만 있으면 추가 코드 없이 모든
+#                              chain/tool 실행을 자동으로 LangSmith에 전송하므로(전역 트레이서), 이 모듈은
+#                              활성화 여부만 판단해 환경변수를 세팅해줄 뿐 트레이싱 자체를 구현하지 않는다.
+#                              키가 없으면 조용히 건너뛰고 1)/2)의 로컬 트레이스만 남는다(외부 계정 불필요).
 #
-# 이 로그가 설계안 5번의 "이 선택지는 어떤 검색에서 나왔나 복원 가능"과
+# 이 로그(및 LangSmith가 있다면 그쪽 트레이스)가 설계안 5번의 "이 선택지는 어떤 검색에서 나왔나 복원 가능"과
 # "Agent 궤적 평가(어떤 tool을 몇 번 불렀나)"의 최소 단위 원자료가 된다.
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -22,6 +28,28 @@ from langchain_core.callbacks import BaseCallbackHandler  # noqa: E402
 from config import OUTPUT_DIR  # noqa: E402
 
 TRACE_DIR = Path(OUTPUT_DIR) / "traces"
+DEFAULT_LANGCHAIN_PROJECT = "consultant-bot"
+
+
+def configure_langsmith() -> bool:
+    """LANGCHAIN_API_KEY가 설정돼 있으면 LangSmith 트레이싱을 활성화하고 True를 반환한다.
+
+    없으면 아무 것도 하지 않고 False를 반환한다(선택 기능 - LangSmith 계정이 없어도 로컬 JSONL
+    트레이스만으로 정상 동작). config.py의 load_dotenv()가 이미 .env를 읽어 os.environ을 채워둔 상태를
+    전제로 한다(이 모듈이 import하는 `config` 모듈의 부수효과).
+    """
+    api_key = os.getenv("LANGCHAIN_API_KEY") or os.getenv("LANGSMITH_API_KEY")
+    if not api_key:
+        return False
+    os.environ["LANGCHAIN_API_KEY"] = api_key
+    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+    os.environ.setdefault("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    os.environ.setdefault("LANGCHAIN_PROJECT", DEFAULT_LANGCHAIN_PROJECT)
+    print(f"[observability] LangSmith 트레이싱 활성화 (project={os.environ['LANGCHAIN_PROJECT']})")
+    return True
+
+
+LANGSMITH_ENABLED = configure_langsmith()
 
 
 def _trace_path(thread_id: str) -> Path:

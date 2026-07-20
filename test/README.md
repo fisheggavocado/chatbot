@@ -60,6 +60,21 @@ python test/run_scenarios.py --only faq --faq-question "임베딩이 뭐야?"
 python test/run_scenarios.py --only design --design-question "..."
 ```
 
+### 3단계 — FAQ 페르소나 회귀 테스트 (`regression_faq.py`)
+```bash
+python test/regression_faq.py
+```
+`consultant_bot/llm.py`의 `SYSTEM_PROMPT`(FAQ 페르소나)가 실제로 지켜지는지 케이스 x 이슈 매트릭스로
+검증한다. `run_scenarios.py`처럼 눈으로 보는 스크립트가 아니라 속성(property) 단위로 pass/fail을 판정하고,
+`test/regression_baseline.json`에 결과를 저장해 다음 실행부터 **회귀 게이트**로 쓴다 — 이전엔 통과하던
+케이스가 이번엔 실패하면 종료 코드 1로 알려준다(프롬프트 문구를 바꾼 뒤 "어느 칸이 빨개졌는지" 확인하는
+용도). 세 케이스 모두 정직/금지표현 이슈를 검증하며, `no_evidence_honest`는 `react_loop.hybrid_search`를
+빈 결과로 monkeypatch해 "근거가 전혀 없는 상황"을 테스트 PDF 내용과 무관하게 결정적으로 재현한다.
+
+```bash
+python test/regression_faq.py --update-baseline   # 의도적인 프롬프트/코드 변경 후 기준선 갱신
+```
+
 ## 성공 기준
 - **FAQ**: `intent=faq`로 라우팅되고, 답변에 출처(PDF 파일명)가 포함됨 (근거가 없으면 "확인 불가" 정직한
   폴백도 정상 — 위 "범위/한계" 참고)
