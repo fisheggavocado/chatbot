@@ -62,18 +62,14 @@ CUDA가 있는 GPU 클라우드에서는 자동으로 GPU를 쓴다. `OUTPUT_DIR
 - **2026-07-20**: 위 문제를 일단 읽기(`HF_TOKEN`/`HF_REPO_ID`)와 쓰기(`HF_TOKEN_ORG`/`HF_REPO_ID_ORG`)
   credential 분리로 해결했다가, 이후 `HF_REPO_ID`를 쓰기 권한이 있는 새 repo(`yeardream-toy-project/lecture_pdf`,
   PDF 40개 보유)로 교체하면서 ORG 분리가 불필요해져 되돌림 — `config.py`/`hf_storage.py`/`main.py`를 전부
-  단일 `HF_TOKEN`/`HF_REPO_ID`만 쓰도록 원복. 임베딩 인덱스 백업·consultant_bot 체크포인트 백업·PDF 동기화가
-  모두 이 하나의 repo로 통일됨.
+  단일 `HF_TOKEN`/`HF_REPO_ID`만 쓰도록 원복. 다만 이 시점의 `HF_TOKEN`으로 실제 업로드 왕복 테스트를 했더니
+  이 repo에서도 동일하게 `403 Forbidden`이 남을 확인.
+- **2026-07-20**: `HF_TOKEN`을 write 권한이 있는 새 토큰으로 교체 → 업로드→삭제 왕복 테스트 성공
+  (`yeardream-toy-project/lecture_pdf`에 실제 쓰기 가능 확인됨). 임베딩 인덱스 백업·consultant_bot 체크포인트
+  백업이 이제 정상 동작할 것으로 예상.
 
 ## 알려진 한계 / 다음 단계
 
-- **현재 `HF_TOKEN`은 `yeardream-toy-project/lecture_pdf`에도 쓰기 권한이 없음 (확인됨, 미해결)**: 새 repo로
-  바꾼 뒤 업로드 왕복(작은 테스트 파일 업로드→삭제)을 실제로 실행해봤더니 이전 `RogersHun/lecture_pdf`와
-  동일하게 `403 Forbidden`("pass create_pr=1 as a query parameter to create a Pull Request")로 실패함.
-  즉 이 토큰은 이 org repo에 대해 PR 없이 바로 push할 권한이 없는 상태 — HF 계정에서 이 repo에 대한
-  write role(또는 direct commit 권한)을 부여받아야 `upload_output_to_hf`/`upload_checkpoint_to_hf`가 실제로
-  동작한다. 그 전까지는 gcube에서 `main.py --use-hf`를 완주해도 **로컬/컨테이너에는 인덱스가 만들어지지만
-  HF 백업은 조용히 실패**하고(예외를 삼켜 처리 자체는 안 막힘), 컨테이너가 죽으면 그 진행분이 유실된다.
 - **시스템 프롬프트(페르소나) 없음**: 각 노드가 개별 목적의 프롬프트만 사용하고, 봇 전체의 톤/역할을 정하는
   시스템 메시지는 없다 (범위 제한은 Coordinator의 규칙/LLM 분류가 대신 담당).
 - 캐시(`cache.py`)에 무효화 로직 없음, E2E/LLM-as-Judge 평가 하네스·외부 트레이싱 대시보드 미구현.
