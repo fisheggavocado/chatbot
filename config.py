@@ -27,6 +27,12 @@ OUTPUT_DIR = os.getenv("OUTPUT_DIR", r"D:\누리\이어드림 AI 교육\project\
 HF_REPO_ID = os.getenv("HF_REPO_ID")
 HF_LOCAL_SYNC_DIR = r"./hf_pdfs"  # HF Dataset repo에서 내려받은 PDF를 저장할 로컬 캐시 폴더
 
+# 쓰기 권한이 있는 별도 조직 repo (HF_TOKEN/HF_REPO_ID는 읽기 전용이라 업로드가 403으로 막힘).
+# OUTPUT_DIR에서 HF로 올라가는 모든 것(임베딩 인덱스 백업, consultant_bot 체크포인트 백업)은 이쪽에 쓴다.
+# PDF/임베딩 인덱스를 "읽어오는" 쪽(sync_pdfs_from_hf, restore_output_from_hf)은 계속 HF_TOKEN/HF_REPO_ID를 쓴다.
+HF_TOKEN_ORG = os.getenv("HF_TOKEN_ORG")
+HF_REPO_ID_ORG = os.getenv("HF_REPO_ID_ORG")
+
 # 모델명은 비밀값은 아니라 코드에 둬도 되지만, .env에서 값을 주면 코드 수정 없이 바꿀 수 있다 (안 쓰면 기본값 사용).
 VISION_MODEL = os.getenv("VISION_MODEL", "gpt-5-mini")        # PDF 페이지 시각적 해석 (OpenAI API)
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")  # 로컬 오픈소스 임베딩 모델
@@ -42,7 +48,16 @@ MIN_EXTRACTABLE_TEXT_LENGTH = 30
 # 로고·아이콘처럼 작은 장식 이미지는 이 값 미만이라 비전 API 추가 호출 대상에서 제외된다.
 MIN_IMAGE_AREA_RATIO = 0.05
 
-DEVICE = os.getenv("DEVICE", "cuda")  # BGE-M3/리랭커 실행 장치, GPU가 없으면 "cpu"로 변경 (환경변수로 덮어쓰기 가능)
+# BGE-M3/리랭커 실행 장치. DEVICE 환경변수를 명시하면 그 값을 그대로 쓰고,
+# 명시하지 않으면 torch.cuda.is_available()로 자동 감지한다 — 로컬(GPU 없음)에서는 cpu,
+# GPU 클라우드(CUDA 있음)에서는 자동으로 cuda를 쓰므로 환경마다 따로 설정할 필요가 없다.
+_env_device = os.getenv("DEVICE")
+if _env_device:
+    DEVICE = _env_device
+else:
+    import torch
+
+    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # 검색: bi-encoder(BGE-M3)+BM25를 RRF로 융합해 CANDIDATE_TOP_K개 후보를 뽑은 뒤,
 # cross-encoder(RERANK_MODEL)로 재정렬해 RERANK_TOP_K개만 최종 반환한다.

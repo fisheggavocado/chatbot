@@ -1,0 +1,6 @@
+# consultant_bot 전용 추가 의존성. 루트 requirements.txt(BGE-M3/BM25/리랭커 등)는 이미 설치되어 있다고 가정한다.
+# 설치: pip install -r consultant_bot/requirements.txt  (first_project/.venv 활성화 상태에서)
+langgraph>=0.2.60
+langgraph-checkpoint-sqlite>=2.0.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0

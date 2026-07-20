@@ -17,7 +17,7 @@ from llama_index.core import Settings, StorageContext, VectorStoreIndex, load_in
 from llama_index.core.node_parser import SentenceSplitter
 
 from checkpoint import get_resume_page, is_pdf_done, load_checkpoint, mark_page_done
-from config import CHUNK_OVERLAP, CHUNK_SIZE, HF_REPO_ID, OUTPUT_DIR, PDF_DIR, PERSIST_EVERY_N_PAGES
+from config import CHUNK_OVERLAP, CHUNK_SIZE, HF_REPO_ID, HF_REPO_ID_ORG, OUTPUT_DIR, PDF_DIR, PERSIST_EVERY_N_PAGES
 from embedder import encode_tokens
 from hf_storage import restore_output_from_hf, sync_pdfs_from_hf, upload_output_to_hf
 from llama_embedding import BGEM3Embedding
@@ -132,7 +132,8 @@ def main():
 
         # PDF 하나가 끝날 때마다 HF에 백업해, 컨테이너가 죽어도 완료된 PDF까지는 보존한다.
         # 업로드가 일시적으로 실패해도 처리는 계속하고, 다음 PDF 완료 시 백업에 함께 포함된다.
-        if HF_REPO_ID:
+        # 업로드는 쓰기 권한이 있는 HF_REPO_ID_ORG로 간다 (HF_REPO_ID는 읽기 전용).
+        if HF_REPO_ID_ORG:
             try:
                 upload_output_to_hf(str(output_dir))
             except Exception as e:
@@ -140,11 +141,11 @@ def main():
 
     print(f"[완료] {output_dir}")
 
-    if HF_REPO_ID:
-        print("[업로드] 인덱스를 Hugging Face에 업로드합니다...")
+    if HF_REPO_ID_ORG:
+        print("[업로드] 인덱스를 Hugging Face(쓰기 권한 repo)에 업로드합니다...")
         upload_output_to_hf(output_dir)
     else:
-        print("[건너뜀] HF_REPO_ID가 설정되지 않아 Hugging Face 업로드를 건너뜁니다.")
+        print("[건너뜀] HF_REPO_ID_ORG가 설정되지 않아 Hugging Face 업로드를 건너뜁니다.")
 
 
 if __name__ == "__main__":
