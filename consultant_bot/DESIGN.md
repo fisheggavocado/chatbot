@@ -111,16 +111,13 @@ LLM의 판단(Reflect 단계)과 무관하게 우선 적용된다:
    가리키는 위치(예: `/data/output`)의 같은 파일명.
 2. **HF 백업 (checkpoints/)** — 임베딩 인덱스(`hf_storage.upload_output_to_hf`/`restore_output_from_hf`,
    `embedding/` 경로)와 같은 패턴으로, 이 sqlite 파일도 `hf_storage.upload_checkpoint_to_hf`/
-   `restore_checkpoint_from_hf`가 HF Dataset repo의 `checkpoints/` 경로와 주고받는다. `graph.py`가 로컬에
-   체크포인트가 없고 백업 대상 repo가 설정돼 있으면 시작 시 자동 복원하고, `app.py`가 매 턴이 끝날 때마다
+   `restore_checkpoint_from_hf`가 `HF_REPO_ID`의 `checkpoints/` 경로와 주고받는다. `graph.py`가 로컬에
+   체크포인트가 없고 `HF_REPO_ID`가 설정돼 있으면 시작 시 자동 복원하고, `app.py`가 매 턴이 끝날 때마다
    `backup_checkpoint()`로 재업로드한다(WAL 모드라 업로드 전에 `PRAGMA wal_checkpoint(TRUNCATE)`로 먼저 메인
-   파일에 합침). 백업 대상 repo가 없으면 조용히 건너뛰고, 업로드 실패도 예외를 삼켜 대화를 막지 않는다.
+   파일에 합침). `HF_REPO_ID`가 없으면 조용히 건너뛰고, 업로드 실패도 예외를 삼켜 대화를 막지 않는다.
 
-   **읽기/쓰기 credential 분리**: `HF_TOKEN`/`HF_REPO_ID`는 PDF·임베딩 인덱스가 이미 올라가 있는 읽기 전용
-   원본 repo라 업로드가 403으로 막힌다. 그래서 OUTPUT_DIR에서 HF로 올라가는 모든 것(임베딩 인덱스 백업 +
-   consultant_bot 체크포인트 백업)은 쓰기 권한이 있는 `HF_TOKEN_ORG`/`HF_REPO_ID_ORG`로 보낸다. PDF 동기화·
-   임베딩 인덱스 복원(읽기)은 계속 원본 `HF_TOKEN`/`HF_REPO_ID`를 쓴다. 체크포인트 복원은 백업이 항상
-   ORG repo에만 쌓이므로 복원도 ORG repo에서 한다.
+   PDF/임베딩 인덱스 읽기와 쓰기 모두 같은 `HF_TOKEN`/`HF_REPO_ID`를 쓴다(이 repo에 쓰기 권한이 있는 토큰을
+   쓰는 것을 전제로 함 — 읽기 전용 토큰이면 업로드가 403으로 막히니 쓰기 권한이 있는 repo/토큰으로 바꿔야 함).
 3. **ReAct 스텝별 스냅샷 (JSONL)** — `react_loop.py`가 매 스텝마다 그 스텝에서 얻은 evidence 전체를
    `observability.log_event()`를 통해 `OUTPUT_DIR/traces/{thread_id}.jsonl`에 append한다. 그래프 노드가
    끝나기 전(예: Research Worker의 3스텝 중 2번째)에 프로세스가 죽어도, 이미 쓴 검색/Reflect 토큰의 결과물인

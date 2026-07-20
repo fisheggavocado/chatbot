@@ -59,20 +59,18 @@ CUDA가 있는 GPU 클라우드에서는 자동으로 GPU를 쓴다. `OUTPUT_DIR
   `graph.py`(시작 시 자동 복원, WAL 체크포인트 후 업로드)·`app.py`(매 턴 종료 후 백업 호출)에 연결. 실제
   HF repo로 왕복 테스트한 결과 코드 경로는 정상 동작하나, 현재 `.env`의 `HF_TOKEN`이 `RogersHun/lecture_pdf`에
   대한 쓰기 권한이 없어(`403 Forbidden`) 실제 업로드는 실패함을 확인.
-- **2026-07-20**: 위 문제 해결 — 읽기(`HF_TOKEN`/`HF_REPO_ID`, 원본·읽기전용)와 쓰기(`HF_TOKEN_ORG`/
-  `HF_REPO_ID_ORG`, 쓰기 권한 조직 repo)를 분리. `config.py`에 `HF_TOKEN_ORG`/`HF_REPO_ID_ORG` 추가,
-  `hf_storage.py`의 `upload_output_to_hf`/`upload_checkpoint_to_hf`/`restore_checkpoint_from_hf`가 ORG
-  credential을 쓰도록 변경(PDF 동기화·임베딩 인덱스 복원은 계속 원본 credential 사용), `main.py`의 업로드
-  게이팅 조건도 `HF_REPO_ID` → `HF_REPO_ID_ORG`로 수정(안 그러면 `HF_REPO_ID_ORG` 미설정 시 업로드 단계에서
-  크래시할 뻔했음).
+- **2026-07-20**: 위 문제를 일단 읽기(`HF_TOKEN`/`HF_REPO_ID`)와 쓰기(`HF_TOKEN_ORG`/`HF_REPO_ID_ORG`)
+  credential 분리로 해결했다가, 이후 `HF_REPO_ID`를 쓰기 권한이 있는 새 repo(`yeardream-toy-project/lecture_pdf`,
+  PDF 40개 보유)로 교체하면서 ORG 분리가 불필요해져 되돌림 — `config.py`/`hf_storage.py`/`main.py`를 전부
+  단일 `HF_TOKEN`/`HF_REPO_ID`만 쓰도록 원복. 임베딩 인덱스 백업·consultant_bot 체크포인트 백업·PDF 동기화가
+  모두 이 하나의 repo로 통일됨.
 
 ## 알려진 한계 / 다음 단계
 
-- **체크포인트/임베딩 업로드는 `HF_TOKEN_ORG`/`HF_REPO_ID_ORG`가 설정돼 있어야 동작함**: 원본
-  `HF_TOKEN`/`HF_REPO_ID`(`RogersHun/lecture_pdf`)는 읽기 전용이라 업로드 시 `403 Forbidden`이 남을 확인함.
-  이후 읽기/쓰기 credential을 분리해, OUTPUT_DIR에서 HF로 올라가는 모든 것(임베딩 인덱스 백업 + consultant_bot
-  체크포인트 백업)은 쓰기 권한이 있는 `HF_TOKEN_ORG`/`HF_REPO_ID_ORG`로 보내도록 수정함(PDF/임베딩 "읽기"는
-  계속 원본 repo 사용). `HF_REPO_ID_ORG`가 `.env`에 없으면 업로드 단계를 조용히 건너뛴다.
+- **HF 업로드는 `HF_REPO_ID`에 쓰기 권한이 있는 토큰을 전제로 함**: 이전에 읽기 전용 repo(`RogersHun/lecture_pdf`)
+  로 업로드 시도 시 `403 Forbidden`이 났던 적이 있음. 현재 repo(`yeardream-toy-project/lecture_pdf`)는 쓰기
+  권한이 있는 것으로 확인됐으나, 만약 `HF_REPO_ID`를 다시 읽기 전용 repo로 바꾸면 `upload_output_to_hf`/
+  `upload_checkpoint_to_hf`가 다시 403으로 실패할 수 있음(예외는 삼켜서 대화/처리는 안 막힘).
 - **시스템 프롬프트(페르소나) 없음**: 각 노드가 개별 목적의 프롬프트만 사용하고, 봇 전체의 톤/역할을 정하는
   시스템 메시지는 없다 (범위 제한은 Coordinator의 규칙/LLM 분류가 대신 담당).
 - 캐시(`cache.py`)에 무효화 로직 없음, E2E/LLM-as-Judge 평가 하네스·외부 트레이싱 대시보드 미구현.

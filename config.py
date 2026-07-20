@@ -27,12 +27,6 @@ OUTPUT_DIR = os.getenv("OUTPUT_DIR", r"D:\누리\이어드림 AI 교육\project\
 HF_REPO_ID = os.getenv("HF_REPO_ID")
 HF_LOCAL_SYNC_DIR = r"./hf_pdfs"  # HF Dataset repo에서 내려받은 PDF를 저장할 로컬 캐시 폴더
 
-# 쓰기 권한이 있는 별도 조직 repo (HF_TOKEN/HF_REPO_ID는 읽기 전용이라 업로드가 403으로 막힘).
-# OUTPUT_DIR에서 HF로 올라가는 모든 것(임베딩 인덱스 백업, consultant_bot 체크포인트 백업)은 이쪽에 쓴다.
-# PDF/임베딩 인덱스를 "읽어오는" 쪽(sync_pdfs_from_hf, restore_output_from_hf)은 계속 HF_TOKEN/HF_REPO_ID를 쓴다.
-HF_TOKEN_ORG = os.getenv("HF_TOKEN_ORG")
-HF_REPO_ID_ORG = os.getenv("HF_REPO_ID_ORG")
-
 # 모델명은 비밀값은 아니라 코드에 둬도 되지만, .env에서 값을 주면 코드 수정 없이 바꿀 수 있다 (안 쓰면 기본값 사용).
 VISION_MODEL = os.getenv("VISION_MODEL", "gpt-5-mini")        # PDF 페이지 시각적 해석 (OpenAI API)
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")  # 로컬 오픈소스 임베딩 모델
