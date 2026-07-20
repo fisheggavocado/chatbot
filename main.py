@@ -19,7 +19,7 @@ from llama_index.core.node_parser import SentenceSplitter
 from checkpoint import get_resume_page, is_pdf_done, load_checkpoint, mark_page_done
 from config import CHUNK_OVERLAP, CHUNK_SIZE, HF_REPO_ID, OUTPUT_DIR, PDF_DIR, PERSIST_EVERY_N_PAGES
 from embedder import encode_tokens
-from hf_storage import sync_pdfs_from_hf, upload_output_to_hf
+from hf_storage import restore_output_from_hf, sync_pdfs_from_hf, upload_output_to_hf
 from llama_embedding import BGEM3Embedding
 from llama_pdf_reader import VisionPDFReader
 from pdf_reader import count_pages
@@ -62,6 +62,11 @@ def main():
 
     output_dir = Path(OUTPUT_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 로컬에 진행 기록이 없으면(휘발성 컨테이너 재시작 등) HF의 백업에서 이어받는다.
+    if HF_REPO_ID and not (output_dir / "checkpoint.json").exists():
+        if restore_output_from_hf(str(output_dir)):
+            print("[재개 준비] Hugging Face 백업에서 이전 진행분을 복원했습니다.")
 
     state = load_checkpoint()
 
@@ -124,6 +129,14 @@ def main():
 
         # 페이지 루프 종료 시점의 최종 상태를 디스크에 확실히 반영한다.
         index.storage_context.persist(persist_dir=str(output_dir))
+
+        # PDF 하나가 끝날 때마다 HF에 백업해, 컨테이너가 죽어도 완료된 PDF까지는 보존한다.
+        # 업로드가 일시적으로 실패해도 처리는 계속하고, 다음 PDF 완료 시 백업에 함께 포함된다.
+        if HF_REPO_ID:
+            try:
+                upload_output_to_hf(str(output_dir))
+            except Exception as e:
+                print(f"[백업 실패 - 계속 진행] {pdf_path.name}: {e}")
 
     print(f"[완료] {output_dir}")
 

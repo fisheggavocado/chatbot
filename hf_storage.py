@@ -9,6 +9,9 @@
 #   python hf_storage.py --upload-output   # OUTPUT_DIR -> HF_REPO_ID/embedding 업로드
 
 import argparse
+import shutil
+import tempfile
+from pathlib import Path
 
 from huggingface_hub import HfApi, snapshot_download
 
@@ -50,6 +53,38 @@ def upload_output_to_hf(output_dir: str = OUTPUT_DIR) -> None:
         f"[업로드 완료] '{output_dir}' -> "
         f"https://huggingface.co/datasets/{HF_REPO_ID}/tree/main/{OUTPUT_PATH_IN_REPO}"
     )
+
+
+def restore_output_from_hf(output_dir: str = OUTPUT_DIR) -> bool:
+    """HF repo의 embedding/ 폴더(이전 실행 백업)를 output_dir로 복원한다.
+
+    백업이 없으면(첫 실행) False를 반환하고 아무것도 하지 않는다.
+    컨테이너처럼 로컬 디스크가 휘발성인 환경에서, 재시작 시 이전 진행분을 이어받기 위해 사용한다.
+    """
+    if not HF_REPO_ID:
+        return False
+    try:
+        files = HfApi(token=HF_TOKEN).list_repo_files(HF_REPO_ID, repo_type="dataset")
+    except Exception as e:
+        print(f"[복원 건너뜀] HF repo 조회 실패: {e}")
+        return False
+    if not any(f.startswith(f"{OUTPUT_PATH_IN_REPO}/") for f in files):
+        return False
+
+    with tempfile.TemporaryDirectory() as tmp:
+        snapshot_download(
+            repo_id=HF_REPO_ID,
+            repo_type="dataset",
+            local_dir=tmp,
+            token=HF_TOKEN,
+            allow_patterns=[f"{OUTPUT_PATH_IN_REPO}/*"],
+        )
+        src = Path(tmp) / OUTPUT_PATH_IN_REPO
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        for item in src.iterdir():
+            shutil.copy2(item, Path(output_dir) / item.name)
+    print(f"[복원 완료] {HF_REPO_ID}/{OUTPUT_PATH_IN_REPO} -> '{output_dir}'")
+    return True
 
 
 def sync_pdfs_from_hf() -> str:
