@@ -28,7 +28,7 @@ HF_REPO_ID = os.getenv("HF_REPO_ID")
 HF_LOCAL_SYNC_DIR = r"./hf_pdfs"  # HF Dataset repo에서 내려받은 PDF를 저장할 로컬 캐시 폴더
 
 # 모델명은 비밀값은 아니라 코드에 둬도 되지만, .env에서 값을 주면 코드 수정 없이 바꿀 수 있다 (안 쓰면 기본값 사용).
-VISION_MODEL = os.getenv("VISION_MODEL", "gpt-5-mini")        # PDF 페이지 시각적 해석 (OpenAI API)
+VISION_MODEL = os.getenv("VISION_MODEL", "openai/gpt-5-mini")  # PDF 페이지 시각적 해석 (OpenAI API, 게이트웨이 요구 형식)
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")  # 로컬 오픈소스 임베딩 모델
 
 CHUNK_SIZE = 700       # 임베딩 청크 최대 토큰 수
