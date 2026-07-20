@@ -29,11 +29,13 @@ gcube처럼 컨테이너에 대화형 stdin이 붙지 않는 배포 환경에서
 
 | 엔드포인트 | 설명 |
 |---|---|
+| `GET /` | `static/index.html` — 바닐라 JS 브라우저 채팅 화면. 아래 API를 그대로 호출하므로 별도 빌드 없이 gcube 워크로드의 공개 URL을 열면 바로 대화 가능 |
 | `GET /health` | 상태 확인 |
 | `POST /chat/message` `{message, thread_id?}` | 새 대화면 `thread_id` 생략(서버가 발급), 이어가는 대화면 이전 응답의 `thread_id`를 그대로 전달 |
 | `POST /chat/resume` `{thread_id, resume}` | 직전 응답이 `status: "interrupt"`일 때만 호출. `resume` 형태는 `stage`별로 다름: `tech_select` → `["기술1", "기술2"]`, `pipeline_select` → `{"pipeline": "이름", "confirm": true}`, `compare` → `{"confirm": true}` |
 
-두 엔드포인트 모두 `{status: "interrupt", stage, payload}` 또는 `{status: "done", answer}`를 반환한다.
+`/chat/message`·`/chat/resume` 두 엔드포인트 모두 `{status: "interrupt", stage, payload}` 또는
+`{status: "done", answer}`를 반환한다.
 
 ### gcube 컨테이너 명령
 
@@ -59,7 +61,8 @@ HF `embedding/`에 백업돼 있으면 **재임베딩 없이 바로 이 챗봇(F
 | `coordinator.py` / `faq_agent.py` / `wizard_supervisor.py` / `research_worker.py` / `presenter.py` / `guardrail.py` | 6개 그래프 노드 |
 | `graph.py` | `StateGraph` 조립 + `SqliteSaver` checkpointer |
 | `app.py` | 터미널 대화형 실행 진입점 (로컬 개발/디버그용) |
-| `server.py` | FastAPI HTTP 실행 진입점 (gcube 등 배포용 기본 진입점) |
+| `server.py` | FastAPI HTTP 실행 진입점 (gcube 등 배포용 기본 진입점), `GET /`로 `static/index.html` 서빙 |
+| `static/index.html` | 바닐라 JS 브라우저 채팅 UI (빌드 불필요, `server.py`의 `/chat/message`·`/chat/resume`만 호출) |
 | `eval/` | E2E + LLM-as-Judge 평가 하네스 (`eval/run_eval.py`) — 아래 "품질 평가" 참고 |
 
 ## 품질 평가 (E2E + LLM-as-Judge)
@@ -203,6 +206,14 @@ API를 호출하므로(그래프 실행 + judge 호출) 비용이 발생한다.
   자체는 guardrail이 의도대로 동작한 것) - 실제 서비스 인덱스로 돌리면 점수가 달라질 것으로 예상. `--only`
   없이 네 케이스를 한 번에 돌렸을 때는 위 "품질 평가" 절에 적은 대로 세그멘테이션 폴트가 발생해, 당분간
   `--only`로 나눠 돌리도록 문서화함
+- **2026-07-21**: 로컬(Windows) 환경에서 torch/BGE-M3/reranker 로딩이 간헐적으로 세그폴트/`WinError 1455`
+  (페이징 파일 부족)를 일으켜 gcube 클라우드 GPU 노드에서 돌리기로 결정 — 임베딩은 이미 HF에 백업돼 있으므로
+  gcube 워크로드 "컨테이너 명령"란은 비워 기본 `CMD`(uvicorn `server:app`)만 실행하면 재임베딩 없이 바로
+  챗봇/FAQ가 뜬다. `test/regression_faq.py`를 재실행해 `guardrail.py` 수정 반영 후 세 케이스 모두 통과함을
+  확인하고 `test/regression_baseline.json`을 갱신
+- **2026-07-21**: `server.py`에 `GET /` 추가 — `static/index.html`(바닐라 JS, 빌드 없음)을 서빙해 gcube
+  워크로드의 공개 URL을 그냥 열면 브라우저에서 바로 대화할 수 있게 함. 기존 `/chat/message`·`/chat/resume`
+  API를 그대로 호출하므로 서버 쪽 로직 변경은 없음
 
 ## 알려진 한계 / 다음 단계
 

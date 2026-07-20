@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI 설계 컨설턴트 봇</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+    background: #f4f5f7;
+    color: #1a1a1a;
+  }
+  #app {
+    max-width: 720px;
+    margin: 0 auto;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 14px 16px;
+    background: #ffffff;
+    border-bottom: 1px solid #e2e4e8;
+  }
+  header h1 {
+    font-size: 16px;
+    margin: 0;
+  }
+  header p {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: #6b7280;
+  }
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .bubble {
+    max-width: 80%;
+    padding: 10px 14px;
+    border-radius: 14px;
+    white-space: pre-wrap;
+    line-height: 1.5;
+    font-size: 14px;
+  }
+  .bubble.user {
+    align-self: flex-end;
+    background: #2563eb;
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .bubble.bot {
+    align-self: flex-start;
+    background: #ffffff;
+    border: 1px solid #e2e4e8;
+    border-bottom-left-radius: 4px;
+  }
+  .bubble.system {
+    align-self: center;
+    background: transparent;
+    color: #9aa0aa;
+    font-size: 12px;
+  }
+  .card {
+    align-self: flex-start;
+    max-width: 90%;
+    background: #ffffff;
+    border: 1px solid #e2e4e8;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 14px;
+  }
+  .card h3 {
+    font-size: 13px;
+    margin: 0 0 8px;
+    color: #374151;
+  }
+  .option-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid #f0f1f3;
+  }
+  .option-row:last-of-type { border-bottom: none; }
+  .option-row label { flex: 1; cursor: pointer; }
+  .option-row .source { color: #9aa0aa; font-size: 12px; }
+  .steps { margin: 4px 0 0 20px; padding: 0; color: #4b5563; font-size: 13px; }
+  table.compare { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+  table.compare th, table.compare td { border: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; }
+  table.compare th { background: #f9fafb; }
+  .card .actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+  }
+  .card button {
+    border: none;
+    background: #2563eb;
+    color: #fff;
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .card button.secondary {
+    background: #e5e7eb;
+    color: #1a1a1a;
+  }
+  .card button:disabled { opacity: .5; cursor: default; }
+  #inputbar {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    background: #ffffff;
+    border-top: 1px solid #e2e4e8;
+  }
+  #inputbar input {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    font-size: 14px;
+  }
+  #inputbar button {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: none;
+    background: #2563eb;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  #inputbar button:disabled { opacity: .5; cursor: default; }
+  @media (prefers-color-scheme: dark) {
+    html, body { background: #16181d; color: #e5e7eb; }
+    header, .bubble.bot, .card, #inputbar { background: #1f2229; border-color: #2b2f38; }
+    table.compare th { background: #262a33; }
+    table.compare th, table.compare td { border-color: #2b2f38; }
+    #inputbar input { background: #16181d; border-color: #2b2f38; color: #e5e7eb; }
+    .card button.secondary { background: #2b2f38; color: #e5e7eb; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>AI 설계 컨설턴트 봇</h1>
+    <p>강의 자료 기반 FAQ 응답 / 3턴 설계 위저드 (consultant_bot)</p>
+  </header>
+  <div id="log"></div>
+  <form id="inputbar">
+    <input id="text" type="text" placeholder="질문을 입력하세요..." autocomplete="off" />
+    <button id="send" type="submit">보내기</button>
+  </form>
+</div>
+<script>
+  const log = document.getElementById("log");
+  const form = document.getElementById("inputbar");
+  const textInput = document.getElementById("text");
+  const sendBtn = document.getElementById("send");
+
+  let threadId = sessionStorage.getItem("consultant_bot_thread_id") || null;
+
+  function setThreadId(id) {
+    threadId = id;
+    sessionStorage.setItem("consultant_bot_thread_id", id);
+  }
+
+  function addBubble(text, role) {
+    const el = document.createElement("div");
+    el.className = "bubble " + role;
+    el.textContent = text;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    return el;
+  }
+
+  function setBusy(busy) {
+    sendBtn.disabled = busy;
+    textInput.disabled = busy;
+  }
+
+  async function callApi(path, body) {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error("HTTP " + res.status + ": " + errText);
+    }
+    return res.json();
+  }
+
+  function handleResult(data) {
+    setThreadId(data.thread_id);
+    if (data.status === "interrupt") {
+      renderInterrupt(data.stage, data.payload);
+    } else {
+      addBubble(data.answer || "(빈 응답)", "bot");
+    }
+  }
+
+  async function sendMessage(message) {
+    setBusy(true);
+    addBubble(message, "user");
+    try {
+      const data = await callApi("/chat/message", { message, thread_id: threadId });
+      handleResult(data);
+    } catch (e) {
+      addBubble("오류: " + e.message, "system");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendResume(resumeValue) {
+    setBusy(true);
+    try {
+      const data = await callApi("/chat/resume", { thread_id: threadId, resume: resumeValue });
+      handleResult(data);
+    } catch (e) {
+      addBubble("오류: " + e.message, "system");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function renderInterrupt(stage, payload) {
+    const card = document.createElement("div");
+    card.className = "card";
+
+    if (stage === "tech_select") {
+      const h = document.createElement("h3");
+      h.textContent = payload.prompt || "사용할 기술을 선택하세요 (다중 선택 가능)";
+      card.appendChild(h);
+      const checkboxes = [];
+      (payload.rows || []).forEach((row) => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "option-row";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = row.technology;
+        checkboxes.push(cb);
+        const label = document.createElement("label");
+        label.textContent = `${row.technology} — ${row.role}`;
+        const src = document.createElement("span");
+        src.className = "source";
+        src.textContent = " (" + row.source + ")";
+        label.appendChild(src);
+        rowEl.appendChild(cb);
+        rowEl.appendChild(label);
+        card.appendChild(rowEl);
+      });
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const submit = document.createElement("button");
+      submit.textContent = "선택 완료";
+      submit.onclick = () => {
+        const selected = checkboxes.filter((c) => c.checked).map((c) => c.value);
+        card.remove();
+        addBubble(selected.join(", ") || "(선택 없음)", "user");
+        sendResume(selected);
+      };
+      actions.appendChild(submit);
+      card.appendChild(actions);
+    } else if (stage === "pipeline_select") {
+      const h = document.createElement("h3");
+      h.textContent = payload.prompt || "파이프라인을 선택하세요";
+      card.appendChild(h);
+      const radios = [];
+      (payload.options || []).forEach((opt, i) => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "option-row";
+        const rb = document.createElement("input");
+        rb.type = "radio";
+        rb.name = "pipeline";
+        rb.value = opt.name;
+        if (i === 0) rb.checked = true;
+        radios.push(rb);
+        const label = document.createElement("label");
+        label.textContent = opt.name;
+        const src = document.createElement("span");
+        src.className = "source";
+        src.textContent = " (" + opt.source + ")";
+        label.appendChild(src);
+        const steps = document.createElement("ul");
+        steps.className = "steps";
+        (opt.steps || []).forEach((s) => {
+          const li = document.createElement("li");
+          li.textContent = s;
+          steps.appendChild(li);
+        });
+        label.appendChild(steps);
+        rowEl.appendChild(rb);
+        rowEl.appendChild(label);
+        card.appendChild(rowEl);
+      });
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const yes = document.createElement("button");
+      yes.textContent = "이 파이프라인으로 진행";
+      yes.onclick = () => {
+        const picked = radios.find((r) => r.checked);
+        const name = picked ? picked.value : null;
+        card.remove();
+        addBubble(`${name} (진행)`, "user");
+        sendResume({ pipeline: name, confirm: true });
+      };
+      const no = document.createElement("button");
+      no.className = "secondary";
+      no.textContent = "다시 보기";
+      no.onclick = () => {
+        const picked = radios.find((r) => r.checked);
+        const name = picked ? picked.value : null;
+        card.remove();
+        addBubble(`${name} (재검토 요청)`, "user");
+        sendResume({ pipeline: name, confirm: false });
+      };
+      actions.appendChild(yes);
+      actions.appendChild(no);
+      card.appendChild(actions);
+    } else if (stage === "compare") {
+      const h = document.createElement("h3");
+      h.textContent = payload.prompt || "비교 결과를 확인하세요";
+      card.appendChild(h);
+      const table = document.createElement("table");
+      table.className = "compare";
+      table.innerHTML =
+        "<tr><th>항목</th><th>옵션 A</th><th>옵션 B</th><th>출처</th></tr>" +
+        (payload.rows || [])
+          .map(
+            (r) =>
+              `<tr><td>${r.aspect}</td><td>${r.option_a}</td><td>${r.option_b}</td><td>${r.source}</td></tr>`
+          )
+          .join("");
+      card.appendChild(table);
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const ok = document.createElement("button");
+      ok.textContent = "확인했습니다";
+      ok.onclick = () => {
+        card.remove();
+        addBubble("확인 완료", "user");
+        sendResume({ confirm: true });
+      };
+      actions.appendChild(ok);
+      card.appendChild(actions);
+    } else {
+      const h = document.createElement("h3");
+      h.textContent = payload.prompt || `(알 수 없는 단계: ${stage})`;
+      card.appendChild(h);
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const ok = document.createElement("button");
+      ok.textContent = "확인";
+      ok.onclick = () => {
+        card.remove();
+        addBubble("확인", "user");
+        sendResume({ confirm: true });
+      };
+      actions.appendChild(ok);
+      card.appendChild(actions);
+    }
+
+    log.appendChild(card);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = textInput.value.trim();
+    if (!text) return;
+    textInput.value = "";
+    sendMessage(text);
+  });
+
+  addBubble(
+    threadId
+      ? "이전 대화를 이어갑니다. 새로 시작하려면 페이지를 새로고침(브라우저 탭 닫기 후 재접속)하세요."
+      : "안녕하세요! 강의 자료 관련 질문이나 AI 파이프라인 설계 상담을 입력해주세요.",
+    "system"
+  );
+</script>
+</body>
+</html>

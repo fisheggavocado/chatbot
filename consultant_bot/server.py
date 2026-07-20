@@ -11,6 +11,8 @@
 #   (Dockerfile 기본 명령이 이 서버를 실행한다)
 #
 # API:
+#   GET  /            -> static/index.html — 브라우저로 여는 채팅 화면(바닐라 JS, 아래 API를 그대로 호출).
+#                         gcube에 배포하면 그 워크로드의 공개 URL을 그대로 열면 된다.
 #   POST /chat/message {message, thread_id?}  -> 새 대화면 thread_id 생략(서버가 발급), 이어가는
 #                                                 대화면 이전 응답의 thread_id를 그대로 보낸다.
 #   POST /chat/resume   {thread_id, resume}    -> status="interrupt" 응답을 받았을 때만 호출.
@@ -38,6 +40,7 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastapi import FastAPI, HTTPException  # noqa: E402
+from fastapi.responses import HTMLResponse  # noqa: E402
 from langchain_core.messages import HumanMessage  # noqa: E402
 from langgraph.types import Command  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
@@ -45,6 +48,13 @@ from pydantic import BaseModel  # noqa: E402
 from graph import backup_checkpoint, get_graph, make_run_config  # noqa: E402
 
 app = FastAPI(title="consultant_bot")
+
+_INDEX_HTML = (Path(__file__).resolve().parent / "static" / "index.html").read_text(encoding="utf-8")
+
+
+@app.get("/", response_class=HTMLResponse)
+def chat_ui() -> str:
+    return _INDEX_HTML
 
 
 class MessageRequest(BaseModel):
