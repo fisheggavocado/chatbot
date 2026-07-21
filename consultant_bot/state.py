@@ -31,6 +31,7 @@ class WizardState(TypedDict):
     last_error: Optional[dict]  # error envelope (재시도 판단용)
     budget_remaining: int  # ReAct 반복 예산
     presenter_output: Optional[dict]  # Presenter가 만든 이번 턴 구조화 출력 (interrupt() payload로 사용)
+    wizard_results: Annotated[list[dict], operator.add]  # 턴별 확정 결과 누적 (compare 종료 시 문서화에 사용)
     guardrail_retries: int  # guardrail 재시도 횟수 (1회 초과 재시도 방지용 카운터)
     extract_source: Optional[str]  # B형(lecture_agent)이 잠근 단일 문서 출처 (연속 턴 검색 범위 고정용)
     extract_turns: int  # B형 연속 턴 카운터 (coordinator의 sticky 라우팅 상한 체크용)

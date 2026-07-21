@@ -13,6 +13,8 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END
 from langgraph.types import Command, interrupt
 
+from chat_utils import last_human_text
+from document_export import save_document
 from observability import log_event
 from state import Stage, WizardState
 
@@ -65,17 +67,28 @@ def wizard_supervisor(
     resume_value = interrupt(state["presenter_output"])
     log_event(thread_id, "wizard_supervisor", "interrupt_resume", {"stage": stage, "resume_value": resume_value})
 
+    stage_result = {"stage": stage, "output": state["presenter_output"], "resume": resume_value}
     next_stage, stage_updates, needs_research = _advance(stage, resume_value)
     update = {
         "stage": next_stage,
         "presenter_output": None,
         "trace": [f"supervisor: resume stage={stage} -> {next_stage}"],
+        "wizard_results": [stage_result],
         **stage_updates,
     }
 
     if next_stage == "done":
+        all_results = state.get("wizard_results", []) + [stage_result]
+        doc_path = save_document(thread_id, last_human_text(state), all_results)
+        log_event(thread_id, "wizard_supervisor", "document_saved", {"path": str(doc_path)})
         update["messages"] = [
-            AIMessage(content="여기까지 설계 상담을 정리했습니다. 더 궁금한 점이 있으면 이어서 질문해 주세요.")
+            AIMessage(
+                content=(
+                    "여기까지 설계 상담을 정리했습니다. 지금까지의 선택 내용을 문서로 정리해 두었으니 "
+                    "아래에서 다운로드하실 수 있습니다. 더 궁금한 점이 있으면 이어서 질문해 주세요."
+                ),
+                additional_kwargs={"download_path": str(doc_path)},
+            )
         ]
         return Command(goto=END, update=update)
 

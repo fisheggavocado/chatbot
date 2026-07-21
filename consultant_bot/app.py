@@ -93,6 +93,9 @@ def main() -> None:
         final_messages = result.get("messages", [])
         if final_messages:
             print(f"\n[답변] {final_messages[-1].content}")
+            download_path = final_messages[-1].additional_kwargs.get("download_path")
+            if download_path:
+                print(f"[문서 저장] {download_path}")
 
         backup_checkpoint()  # 이번 턴까지의 WizardState를 HF checkpoints/에 백업 (HF_REPO_ID 없으면 조용히 건너뜀)
 

@@ -204,7 +204,24 @@
       renderInterrupt(data.stage, data.payload);
     } else {
       addBubble(data.answer || "(빈 응답)", "bot");
+      if (data.download_url) {
+        addDownloadLink(data.download_url);
+      }
     }
+  }
+
+  function addDownloadLink(url) {
+    const el = document.createElement("div");
+    el.className = "bubble bot";
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = "📄 설계 상담 문서 다운로드";
+    a.style.color = "#2563eb";
+    el.appendChild(a);
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
   }
 
   async function sendMessage(message) {

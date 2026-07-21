@@ -20,7 +20,9 @@
 #                                                   tech_select    -> ["기술1", "기술2", ...]
 #                                                   pipeline_select -> {"pipeline": "이름", "confirm": true}
 #                                                   compare        -> {"confirm": true}
-#   두 엔드포인트 모두 {status: "interrupt", stage, payload} 또는 {status: "done", answer} 를 반환한다.
+#   두 엔드포인트 모두 {status: "interrupt", stage, payload} 또는 {status: "done", answer, download_url?} 를 반환한다.
+#   GET  /download/{thread_id} -> compare 단계까지 끝낸 위저드 결과를 정리한 마크다운 문서(FileResponse).
+#                                  document_export.save_document()가 OUTPUT_DIR/design_docs/에 저장해 둔 파일.
 
 import os
 
@@ -40,11 +42,12 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastapi import FastAPI, HTTPException  # noqa: E402
-from fastapi.responses import HTMLResponse  # noqa: E402
+from fastapi.responses import FileResponse, HTMLResponse  # noqa: E402
 from langchain_core.messages import HumanMessage  # noqa: E402
 from langgraph.types import Command  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
+from document_export import doc_path_for_thread  # noqa: E402
 from graph import backup_checkpoint, get_graph, make_run_config  # noqa: E402
 
 app = FastAPI(title="consultant_bot")
@@ -76,13 +79,24 @@ def _respond(result: dict, thread_id: str, config: dict) -> dict:
 
     final_messages = result.get("messages", [])
     answer = final_messages[-1].content if final_messages else ""
+    response = {"thread_id": thread_id, "status": "done", "answer": answer}
+    if final_messages and final_messages[-1].additional_kwargs.get("download_path"):
+        response["download_url"] = f"/download/{thread_id}"
     backup_checkpoint()
-    return {"thread_id": thread_id, "status": "done", "answer": answer}
+    return response
 
 
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/download/{thread_id}")
+def download_document(thread_id: str) -> FileResponse:
+    path = doc_path_for_thread(thread_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="설계 상담 문서를 찾을 수 없습니다.")
+    return FileResponse(path, media_type="text/markdown", filename=path.name)
 
 
 @app.post("/chat/message")
