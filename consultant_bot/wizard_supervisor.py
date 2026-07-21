@@ -46,7 +46,10 @@ def wizard_supervisor(
     thread_id = config["configurable"]["thread_id"]
     stage = state.get("stage")
 
-    if stage is None:
+    if stage is None or stage == "done":
+        # stage="done"은 이전 위저드가 이미 끝났다는 뜻 — 같은 thread_id로 새 design 질문이 들어와도
+        # 체크포인트에 "done"이 그대로 남아있어 `stage is None` 조건만으로는 재초기화가 안 되고,
+        # presenter_output이 없다는 이유만으로 research_worker 없이 곧장 presenter로 잘못 넘어간다.
         log_event(thread_id, "wizard_supervisor", "init", {})
         return Command(
             goto="research_worker",

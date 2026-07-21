@@ -14,7 +14,7 @@ from observability import log_event
 from state import IntentDecision, WizardState
 
 FAQ_MARKERS = ("란?", "이란", "뭐야", "무엇", "정의가", "머야", "차이가", "차이는", "원리는", "원리가", "개념", "정의")
-DESIGN_MARKERS = ("설계", "만들고 싶", "만들어", "구성해", "구축", "파이프라인 추천", "아키텍처", "추천해")
+DESIGN_MARKERS = ("설계", "만들고 싶", "만들어", "구성해", "구축", "파이프라인 추천", "아키텍처", "추천해", "프로세스")
 # B형(추출형 강의자료 Q&A) 트리거 — 특정 강의자료 하나를 요약/예시/해석해달라는 요청.
 # "설명해줘"처럼 FAQ와 겹칠 수 있는 범용 동사는 넣지 않는다 (요약/예시/해석은 FAQ_MARKERS와 겹치지 않음).
 EXTRACT_MARKERS = (
