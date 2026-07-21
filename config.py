@@ -54,10 +54,13 @@ else:
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # 검색: bi-encoder(BGE-M3)+BM25를 RRF로 융합해 CANDIDATE_TOP_K개 후보를 뽑은 뒤,
-# cross-encoder(RERANK_MODEL)로 재정렬해 RERANK_TOP_K개만 최종 반환한다.
+# 그중 RRF 점수 상위 RERANK_CANDIDATE_LIMIT개만 cross-encoder(RERANK_MODEL)로 재정렬해 RERANK_TOP_K개를 최종 반환한다.
+# 후보 풀(CANDIDATE_TOP_K)은 융합 재현율을 위해 넓게 유지하되, 비용이 큰 cross-encoder 연산 대상만 좁혀
+# 속도를 아낀다(RRF가 이미 상위로 걸러낸 후보라 정확도 손실은 적다).
 RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
-CANDIDATE_TOP_K = 30  # 리랭킹 전, bi-encoder/BM25 단계에서 뽑을 후보 개수
-RERANK_TOP_K = 10     # 크로스 인코더 리랭킹 후 최종적으로 반환할 개수
+CANDIDATE_TOP_K = 30       # 리랭킹 전, bi-encoder/BM25 단계에서 뽑을 후보 개수(RRF 융합 풀)
+RERANK_CANDIDATE_LIMIT = 15  # 위 후보 중 cross-encoder 리랭킹에 실제로 넣을 상위 개수
+RERANK_TOP_K = 10          # 크로스 인코더 리랭킹 후 최종적으로 반환할 개수
 
 SECONDS_PER_PAGE_ESTIMATE = 6  # 실제 처리 전 대략적인 예상 시간 계산에 쓰는 가정치(초/페이지)
 PERSIST_EVERY_N_PAGES = 1      # 몇 페이지마다 인덱스를 디스크에 저장할지 (1 = 매 페이지 즉시 저장)

@@ -15,7 +15,7 @@ from llama_index.core import Settings, StorageContext, load_index_from_storage  
 from llama_index.core.llms import MockLLM  # noqa: E402
 from llama_index.core.retrievers import QueryFusionRetriever  # noqa: E402
 
-from config import CANDIDATE_TOP_K, HF_REPO_ID, OUTPUT_DIR, RERANK_TOP_K  # noqa: E402
+from config import CANDIDATE_TOP_K, HF_REPO_ID, OUTPUT_DIR, RERANK_CANDIDATE_LIMIT, RERANK_TOP_K  # noqa: E402
 from hf_storage import restore_output_from_hf  # noqa: E402
 from llama_bm25_retriever import KiwiBM25Retriever  # noqa: E402
 from llama_embedding import BGEM3Embedding  # noqa: E402
@@ -93,7 +93,9 @@ def hybrid_search(query: str, top_k: int = RERANK_TOP_K) -> List[Evidence]:
 
     retriever = _get_retriever()
     candidates = retriever.retrieve(query)
-    results = cross_encoder_rerank(query, candidates, top_k)
+    # RRF 융합 결과는 이미 점수 내림차순 정렬이므로, 상위 RERANK_CANDIDATE_LIMIT개만 골라
+    # cross-encoder에 넣는다 - 가장 비용이 큰 연산의 대상 수를 줄여 속도를 아낀다.
+    results = cross_encoder_rerank(query, candidates[:RERANK_CANDIDATE_LIMIT], top_k)
 
     evidence: List[Evidence] = []
     for node_with_score in results:

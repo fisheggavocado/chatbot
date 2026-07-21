@@ -34,6 +34,19 @@ REFLECT_PROMPT = """당신은 강의 자료 검색 에이전트입니다. 아래
 NO_PROGRESS_LIMIT = 2  # 연속 몇 턴 "신규 출처 0개"면 정체로 보고 조기 종료할지. 낮출수록 보수적(빨리 포기),
 # 높일수록 더 끈질기게 재검색을 시도함 (그만큼 LLM 호출 비용 증가)
 
+# 규칙 우선 sufficient 판정 (coordinator.py의 "규칙 우선, 애매할 때만 LLM" 패턴과 동일) —
+# 이번 라운드 근거의 리랭커 점수가 이미 충분히 높으면 reflect LLM 호출 없이 즉시 종료한다.
+# FAQ(MAX_STEPS=2)는 첫 검색이 이 조건을 만족하는 흔한 경우 사실상 1라운드(LLM 호출 0회)로 끝나고,
+# 점수가 낮거나 애매한 경우에만 기존처럼 reflect_llm으로 폴백한다 — 루프 자체는 유지해 안전망은 보존한다.
+RULE_SUFFICIENT_SCORE = 0.5  # bge-reranker-v2-m3 normalize=True 점수(0~1) 임계값. 낮출수록 LLM 호출↓ 재현율 리스크↑
+RULE_MIN_MATCHES = 2  # 이 개수만큼의 근거가 임계값을 넘어야 규칙 통과 (근거 1건만으로 확정하지 않음)
+
+
+def _rule_sufficient(batch: list[Evidence]) -> bool:
+    """이번 라운드에서 새로 얻은 근거의 리랭커 점수가 충분히 높으면 규칙만으로 sufficient로 판단한다."""
+    top_scores = sorted((e["score"] for e in batch), reverse=True)[:RULE_MIN_MATCHES]
+    return len(top_scores) >= RULE_MIN_MATCHES and all(s >= RULE_SUFFICIENT_SCORE for s in top_scores)
+
 
 @dataclass
 class ReactResult:
@@ -125,6 +138,16 @@ def run_bounded_react(
                 stopped_reason = "no_progress"
                 log_event(thread_id, node_name, "react_stop", {"reason": stopped_reason, "query": query})
                 break
+
+        if _rule_sufficient(batch):
+            sufficient = True
+            log_event(
+                thread_id,
+                node_name,
+                "react_rule_sufficient",
+                {"step": step, "top_scores": sorted((e["score"] for e in batch), reverse=True)[:RULE_MIN_MATCHES]},
+            )
+            break
 
         reflect: ReflectDecision = reflect_llm.invoke(
             REFLECT_PROMPT.format(question=question, evidence_summary=_evidence_summary(all_evidence))
