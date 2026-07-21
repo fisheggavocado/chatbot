@@ -18,7 +18,7 @@ PROMPTS = {
         "각 행의 source는 반드시 근거의 출처(PDF 파일명)를 그대로 쓰세요.\n\n요청: {question}\n\n근거:\n{evidence}"
     ),
     "pipeline_select": (
-        "선택된 기술({selected_techs})을 조합한 파이프라인 후보 2개를 제시하세요. 근거에는 각 기술의 개별 정의만"
+        "선택된 기술({selected_techs}) 중 2개 이상을 조합한 파이프라인 후보 2개를 제시하세요. 근거에는 각 기술의 개별 정의만"
         "있을 뿐 '이 조합이 왜 맞는지'는 나와 있지 않습니다 — 근거에 있는 사실들을 조합해 이 요청에 맞는 새로운 "
         "구성 판단을 스스로 추론해서 만드세요(근거 문장을 그대로 옮기는 것으로 끝내지 마세요). 다만 각 기술 "
         "자체의 능력·특성은 근거에 있는 것만 사용하고 지어내지 마세요. 각 옵션의 source는 근거의 출처를 그대로 "
@@ -35,6 +35,14 @@ SCHEMAS = {
     "tech_select": TechSelectOutput,
     "pipeline_select": PipelineSelectOutput,
     "compare": CompareOutput,
+}
+
+# LLM이 생성하는 schema.prompt 필드는 PROMPTS(위 LLM 지시문)를 그대로 베끼는 경향이 있어(실측 확인),
+# 화면에 노출되는 안내 문구는 LLM 출력에 맡기지 않고 고정 문구로 덮어쓴다.
+UI_PROMPTS = {
+    "tech_select": "포함하고 싶은 기술/컴포넌트를 모두 선택하고, 아래의 '선택완료'를 클릭해주세요.",
+    "pipeline_select": "선택하신 기술을 조합한 설계안입니다. 원하시는 설계안을 선택하고, '이 파이프라인으로 진행'을 클릭해주세요.",
+    "compare": "선택하신 설계안으로 진행하였을 때의 장단점 비교표입니다. 확인을 클릭해주세요.",
 }
 
 
@@ -56,13 +64,15 @@ def presenter(state: WizardState, config: RunnableConfig) -> Command[Literal["gu
     )
 
     output = get_structured_llm(schema).invoke(prompt)
+    output_data = output.model_dump()
+    output_data["prompt"] = UI_PROMPTS.get(stage, output_data.get("prompt", ""))
 
     log_event(thread_id, "presenter", "generated", {"stage": stage})
 
     return Command(
         goto="guardrail",
         update={
-            "presenter_output": output.model_dump(),
+            "presenter_output": output_data,
             "trace": [f"presenter: stage={stage} 구조화 출력 생성"],
         },
     )

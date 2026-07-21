@@ -87,7 +87,7 @@ HF `embedding/`에 백업돼 있으면 **재임베딩 없이 바로 이 챗봇(F
 |---|---|---|---|
 | 1 | 입력 가드 | `coordinator.py:69`, `coordinator.py:96` | 범위 밖 질문이 검색까지 도달하는 것 → `out_of_scope`면 검색 0회로 즉시 END |
 | 2 | 추론 루프 가드 | `react_loop.py:94-138` | ReAct의 예산 초과(`budget_exhausted`)/반복(`duplicate_action`)/제자리맴돌기(`no_progress`) 3중 정지 (FAQ/design 경로. B형(`lecture_agent`)은 이 루프 대신 검색 1회로 고정) |
-| 3 | 출력 스키마 가드 | `presenter.py:58` | 파싱 불가능한 형태의 응답 → `get_structured_llm`(Pydantic `with_structured_output`) 강제 |
+| 3 | 출력 스키마 가드 | `presenter.py:66` | 파싱 불가능한 형태의 응답 → `get_structured_llm`(Pydantic `with_structured_output`) 강제 |
 | 4 | 출력 내용 가드 | `guardrail.py:154`(본 함수), `guardrail.py:195`(재시도 로직) | evidence에 없는 확정 표현/할루시네이션 → 규칙 우선 판정(`_rule_verdict`, `guardrail.py:79`) + 애매하면 intent별 LLM 검증(`faq`/`extract`는 엄격, `design`은 합성 허용) + `MAX_GUARDRAIL_RETRIES=1`회 재시도 후 안전 대체 응답 |
 
 보조적으로 `llm.py:56-59`의 `OUT_OF_CONTEXT_MESSAGE`/`FORBIDDEN_HEDGE_PHRASES`가 위 4번 가드(`guardrail.py`)와 평가 하네스(`eval/run_eval.py:258`)의 판정 기준으로 공용 사용된다.
