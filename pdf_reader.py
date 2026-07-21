@@ -61,6 +61,31 @@ def extract_page_text(page: "pdfium.PdfPage") -> str:
     return text
 
 
+# 이 강의 자료(한국어/영어 슬라이드)에서 정상적으로 나올 수 없는 스크립트 블록.
+# 서브셋 임베딩된 폰트의 cmap(글리프->유니코드 매핑)이 깨지면 pdfium 텍스트 레이어 추출 시
+# 한글 완성형(가-힣) 대신 이런 무관한 스크립트로 잘못 디코딩되는 경우가 있다 — 이 블록의 문자가
+# 하나라도 섞여 있으면 사실상 100% cmap 오류로 봐도 된다 (정상 텍스트에는 나올 이유가 없음).
+# U+1100-11FF(한글 자모, 단독 초/중/종성)도 포함 — 정상 텍스트는 완성형이나 호환 자모(ㄱ-ㅎ, U+3130-318F)를
+# 쓰지 이 블록을 단독으로 쓰지 않는다.
+_FORBIDDEN_SCRIPT_RANGES = (
+    (0x0590, 0x08FF),  # 히브리어, 아랍어, 시리아어 등
+    (0x0900, 0x0DFF),  # 데바나가리~신할라 등 남아시아 문자
+    (0x0E00, 0x0EFF),  # 태국어, 라오어
+    (0x1000, 0x109F),  # 미얀마어
+    (0x10A0, 0x10FF),  # 조지아 문자
+    (0x1100, 0x11FF),  # 한글 자모(단독)
+    (0x1200, 0x139F),  # 에티오피아 문자
+    (0x1780, 0x17FF),  # 크메르어
+)
+
+
+def has_corrupted_encoding(text: str) -> bool:
+    """폰트 cmap 오류로 흔히 나타나는, 이 강의 자료에 나올 수 없는 스크립트 문자가 섞여 있는지 검사한다."""
+    return any(
+        any(lo <= ord(ch) <= hi for lo, hi in _FORBIDDEN_SCRIPT_RANGES) for ch in text
+    )
+
+
 def has_significant_image(page: "pdfium.PdfPage", min_area_ratio: float = MIN_IMAGE_AREA_RATIO) -> bool:
     """페이지에 로고/아이콘보다 큰, 의미 있는 삽입 이미지(차트·다이어그램 등)가 있는지 확인한다.
 
