@@ -56,7 +56,11 @@ def upload_output_to_hf(output_dir: str = OUTPUT_DIR) -> None:
         # OUTPUT_DIR에는 이 파일도 함께 있어서 걸러주지 않으면 embedding/에도 섞여 올라가고,
         # 다음 restore_output_from_hf()가 shutil.copy2로 정상 체크포인트를 이걸로 덮어써버린다
         # (실제로 한 번 이 문제로 배포본의 대화 체크포인트가 손상된 적 있음).
-        ignore_patterns=["consultant_bot_checkpoints.sqlite*"],
+        #
+        # traces/(세션 로그 폴더)도 같은 이유로 걸러야 한다 - restore_output_from_hf()는 embedding/의
+        # 최상위 항목을 파일로만 가정하고 shutil.copy2로 복사하는데, 디렉터리가 섞여 있으면
+        # IsADirectoryError로 죽는다 (실제로 이 문제로 배포본의 검색 기능 전체가 멈춘 적 있음).
+        ignore_patterns=["consultant_bot_checkpoints.sqlite*", "traces/*", "traces"],
     )
     print(
         f"[업로드 완료] '{output_dir}' -> "
@@ -91,6 +95,12 @@ def restore_output_from_hf(output_dir: str = OUTPUT_DIR) -> bool:
         src = Path(tmp) / OUTPUT_PATH_IN_REPO
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         for item in src.iterdir():
+            # embedding/ 아래에는 인덱스 파일만 있어야 하지만, 과거 실수로 traces/ 같은 하위 폴더가
+            # 섞여 올라간 적이 있다. shutil.copy2는 디렉터리를 못 다뤄 IsADirectoryError로 죽고
+            # 그러면 이 함수를 호출한 검색 경로 전체가 막히므로, 파일이 아니면 건너뛰고 경고만 남긴다.
+            if not item.is_file():
+                print(f"[복원 건너뜀] '{item.name}'은 파일이 아니라 건너뜀 (embedding/에 있으면 안 되는 항목)")
+                continue
             shutil.copy2(item, Path(output_dir) / item.name)
     print(f"[복원 완료] {HF_REPO_ID}/{OUTPUT_PATH_IN_REPO} -> '{output_dir}'")
     return True
