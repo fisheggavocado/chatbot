@@ -4,6 +4,7 @@
 # 검증 실패 시 1회 재시도(faq->faq_agent / extract->lecture_agent / design->research_worker),
 # 재실패 시 예외를 던지지 않고 "자료에서 확인 불가"로 정직하게 대체한다 (Error as State 원칙).
 
+import re
 import unicodedata
 from typing import Literal, Optional
 
@@ -56,6 +57,25 @@ def _format_evidence(evidence: list[dict]) -> str:
     return "\n".join(f"- [{e['source']} p.{e['page']}] {e['text'][:300]}" for e in evidence) or "(없음)"
 
 
+# 강의 자료 파일명 앞에 흔히 붙는 "7-5. ", "[강의자료] " 같은 번호/대괄호 라벨 접두어.
+_FILENAME_PREFIX_RE = re.compile(r"^\s*(?:\d+(?:-\d+)?\.\s*|\[[^\]]*\]\s*)")
+
+
+def _strip_filename_prefixes(source: str) -> str:
+    """출처 파일명 앞의 번호/대괄호 라벨 접두어를 모두 벗긴 핵심 파일명을 반환한다.
+
+    접두어가 없으면(스트리핑해도 원본과 같으면) 빈 문자열을 반환해, 호출부가 "접두어가 있던
+    출처"만 골라 2차 매칭에 쓰도록 한다.
+    """
+    core = source
+    while True:
+        stripped = _FILENAME_PREFIX_RE.sub("", core)
+        if stripped == core:
+            break
+        core = stripped
+    return core if core != source else ""
+
+
 def _rule_verdict(output_text: str, evidence: list[dict]) -> Optional[bool]:
     """규칙 우선 판정 (coordinator.py의 "규칙 우선, 애매할 때만 LLM" 패턴과 동일).
 
@@ -82,6 +102,16 @@ def _rule_verdict(output_text: str, evidence: list[dict]) -> Optional[bool]:
     사례도 발견됐다 — LLM이 한글 문자열을 생성할 때 완성형(NFC)이 아니라 자모 분해형(NFD)으로 내보내는
     경우가 있어, 화면에는 똑같이 보여도 `==`/`in` 비교로는 다른 문자열이 된다. 그래서 비교 전에 양쪽을
     NFC로 정규화한다 — 눈에 보이는 문자만 같으면 항상 참이 되도록.
+
+    실측 검증(2026-07-21, faq_agent "rag가 뭐야?")에서 세 번째 문제도 발견됐다: evidence 출처가
+    "4-3. [강의자료] RAG (검색 증강 생성) 기초.pdf"처럼 번호/대괄호 라벨 접두어를 달고 있는데, LLM이
+    답변 내용 자체는 완전히 근거에 부합하면서도 인용할 때 그 접두어만 생략하고("RAG (검색 증강 생성)
+    기초.pdf") 핵심 파일명만 쓰는 경우가 있다 — 정상 인용인데도 원본 문자열과 정확히 안 맞아 "근거 밖
+    출처를 지어냄"으로 오판되고, 재시도까지 소진되면 멀쩡한 답변이 안전 대체 응답으로 버려진다. 그래서
+    원본 문자열이 그대로 없으면, 그 앞의 번호("7-5. ")·대괄호 라벨("[강의자료] ") 접두어를 벗긴 핵심
+    파일명으로도 한 번 더 찾아본다 — 이 핵심 파일명은 접두어가 있던 출처에만 존재하므로(접두어가 없는
+    출처는 원본 그대로가 이미 핵심 파일명이라 이 2차 매칭에서 다시 걸리지 않는다), 짧아서 다른 문맥을
+    잘못 지우는 오탐 위험도 낮다.
     """
     normalize = lambda s: unicodedata.normalize("NFC", s)  # noqa: E731
     output_norm = normalize(output_text)
@@ -97,6 +127,16 @@ def _rule_verdict(output_text: str, evidence: list[dict]) -> Optional[bool]:
         if source in remaining:
             matched_known_source = True
             remaining = remaining.replace(source, "")
+
+    # 원본 그대로는 없었지만, 번호/대괄호 라벨 접두어만 뺀 핵심 파일명으로 인용한 경우도 정상 인용으로 인정.
+    core_sources = sorted(
+        {core for core in (_strip_filename_prefixes(s) for s in evidence_sources) if core},
+        key=len, reverse=True,
+    )
+    for core in core_sources:
+        if core in remaining:
+            matched_known_source = True
+            remaining = remaining.replace(core, "")
 
     if not matched_known_source:
         # 알려진 출처가 단 한 번도 안 나옴: .pdf 인용 자체가 없으면(비교/판단할 인용이 없음) 이 규칙이
