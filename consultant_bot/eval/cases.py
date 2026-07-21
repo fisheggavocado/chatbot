@@ -21,4 +21,18 @@ DESIGN_CASES = [
     },
 ]
 
-ALL_CASES = FAQ_CASES + OUT_OF_SCOPE_CASES + DESIGN_CASES
+# extract(B형) 케이스는 interrupt() 없는 짧은 연속 대화라 run_eval.py가 questions 리스트를 순서대로
+# graph.invoke한다(design의 위저드 재개 루프와 달리, coordinator의 sticky 라우팅이 턴을 이어준다).
+EXTRACT_CASES = [
+    {
+        "id": "extract_hf_pipeline",
+        "questions": [
+            "Hugging Face Pipeline 강의 내용을 요약해줘",
+            "관련된 예시 코드 중 하나를 작성해줘",
+            "이 코드를 해석해줘",
+        ],
+        "expected_intent": "extract",
+    },
+]
+
+ALL_CASES = FAQ_CASES + OUT_OF_SCOPE_CASES + DESIGN_CASES + EXTRACT_CASES

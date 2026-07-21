@@ -23,6 +23,7 @@ from hf_storage import restore_checkpoint_from_hf, upload_checkpoint_to_hf  # no
 from coordinator import coordinator  # noqa: E402
 from faq_agent import faq_agent  # noqa: E402
 from guardrail import guardrail  # noqa: E402
+from lecture_agent import lecture_agent  # noqa: E402
 from observability import TraceCallbackHandler  # noqa: E402
 from presenter import presenter  # noqa: E402
 from research_worker import research_worker  # noqa: E402
@@ -71,6 +72,7 @@ def build_graph():
     builder = StateGraph(WizardState)
     builder.add_node("coordinator", coordinator)
     builder.add_node("faq_agent", faq_agent)
+    builder.add_node("lecture_agent", lecture_agent)
     builder.add_node("wizard_supervisor", wizard_supervisor)
     builder.add_node("research_worker", research_worker)
     builder.add_node("presenter", presenter)

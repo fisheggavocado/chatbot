@@ -8,7 +8,7 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
 Stage = Literal["tech_select", "pipeline_select", "compare", "detail", "done"]
-Intent = Literal["faq", "design", "out_of_scope"]
+Intent = Literal["faq", "design", "out_of_scope", "extract"]
 
 
 class Evidence(TypedDict):
@@ -32,6 +32,8 @@ class WizardState(TypedDict):
     budget_remaining: int  # ReAct 반복 예산
     presenter_output: Optional[dict]  # Presenter가 만든 이번 턴 구조화 출력 (interrupt() payload로 사용)
     guardrail_retries: int  # guardrail 재시도 횟수 (1회 초과 재시도 방지용 카운터)
+    extract_source: Optional[str]  # B형(lecture_agent)이 잠근 단일 문서 출처 (연속 턴 검색 범위 고정용)
+    extract_turns: int  # B형 연속 턴 카운터 (coordinator의 sticky 라우팅 상한 체크용)
 
 
 # --- Coordinator: 규칙 기반으로 애매할 때만 LLM 폴백에 쓰는 구조화 출력 ---

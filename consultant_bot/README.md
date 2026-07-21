@@ -58,7 +58,7 @@ HF `embedding/`에 백업돼 있으면 **재임베딩 없이 바로 이 챗봇(F
 | `cache.py` | `SearchCache`(검색 결과 캐시) / `FaqCache`(FAQ 시맨틱 캐시), 인덱스 지문 기반 자동 무효화 + TTL 만료 |
 | `chat_utils.py` | 메시지 목록에서 사용자 발화만 정확히 찾는 공유 헬퍼 |
 | `observability.py` | 콜백 핸들러 + `OUTPUT_DIR/traces/{thread_id}.jsonl` 트레이스 로그 + 선택적 LangSmith 연동 |
-| `coordinator.py` / `faq_agent.py` / `wizard_supervisor.py` / `research_worker.py` / `presenter.py` / `guardrail.py` | 6개 그래프 노드 |
+| `coordinator.py` / `faq_agent.py` / `lecture_agent.py` / `wizard_supervisor.py` / `research_worker.py` / `presenter.py` / `guardrail.py` | 7개 그래프 노드 — `lecture_agent.py`는 B형(추출형 강의자료 Q&A, react_loop 없이 검색 1회) |
 | `graph.py` | `StateGraph` 조립 + `SqliteSaver` checkpointer |
 | `app.py` | 터미널 대화형 실행 진입점 (로컬 개발/디버그용) |
 | `server.py` | FastAPI HTTP 실행 진입점 (gcube 등 배포용 기본 진입점), `GET /`로 `static/index.html` 서빙 |
@@ -72,28 +72,30 @@ HF `embedding/`에 백업돼 있으면 **재임베딩 없이 바로 이 챗봇(F
 | `SYSTEM_PROMPT` | `llm.py:61` | FAQ Agent 페르소나(역할/답변 원칙/출력 형식) — `faq_agent.py:65`에서 `SystemMessage`로 적용 |
 | `OUT_OF_CONTEXT_MESSAGE` | `llm.py:56` | 근거 부족 시 정직한 안내 문구 (faq_agent·guardrail 공용 상수) |
 | `FORBIDDEN_HEDGE_PHRASES` | `llm.py:59` | 금지 헤지 표현 목록 (평가 하네스의 결정적 체크용) |
-| `ANSWER_PROMPT` | `faq_agent.py:24` | 근거 기반 "정의→사용 상황→출처" 답변 생성 프롬프트 |
+| `ANSWER_PROMPT` | `faq_agent.py:24` | 근거 기반 "정의→사용 상황→출처" 답변 생성 프롬프트 (FAQ, 1턴) |
+| `EXTRACT_ANSWER_PROMPT` | `lecture_agent.py:18` | 근거 기반 요약/예시/해석 답변 생성 프롬프트 (B형, 이전 답변 참조 포함) |
 | `REFLECT_PROMPT` | `react_loop.py:23` | bounded-ReAct의 Reflect(다음 액션 판단) 단계 프롬프트 |
-| `PROMPTS` (dict) | `presenter.py:15` | stage별(tech_select/pipeline_select/compare) 구조화 출력 프롬프트, 46번 줄에서 `.format()` 호출 |
-| 의도 분류 프롬프트 (인라인) | `coordinator.py:59` | 규칙 기반 분류가 애매할 때 LLM 폴백용 faq/design/out_of_scope 분류 프롬프트 |
-| `VERDICT_PROMPT` | `guardrail.py:18` | 출력이 근거 밖 내용을 확정 단언하는지 검증하는 프롬프트 |
+| `PROMPTS` (dict) | `presenter.py:15` | stage별(tech_select/pipeline_select/compare) 구조화 출력 프롬프트. pipeline_select/compare는 근거 사실을 조합한 합성 판단을 명시적으로 요구 |
+| 의도 분류 프롬프트 (인라인) | `coordinator.py:84` | 규칙 기반 분류가 애매할 때 LLM 폴백용 faq/design/extract/out_of_scope 4지 분류 프롬프트 |
+| `STRICT_VERDICT_PROMPT` | `guardrail.py:22` | faq/extract 경로용 — 근거 밖 확정 단언이면 무엇이든 실패 판정 |
+| `SYNTHESIS_VERDICT_PROMPT` | `guardrail.py:36` | design 경로용 — 근거 사실을 조합한 합성 판단은 허용, 사실 날조만 실패 판정 |
 | `JUDGE_PROMPT` | `eval/judge.py:16` | LLM-as-Judge 평가용 프롬프트 (품질 평가 하네스 전용, 런타임 아님) |
 
 ## 가드레일 위치 (4지점)
 
 | # | 가드 지점 | 파일:줄 | 막는 대상 |
 |---|---|---|---|
-| 1 | 입력 가드 | `coordinator.py:46`, `coordinator.py:65` | 범위 밖 질문이 검색까지 도달하는 것 → `out_of_scope`면 검색 0회로 즉시 END |
-| 2 | 추론 루프 가드 | `react_loop.py:94-138` | ReAct의 예산 초과(`budget_exhausted`)/반복(`duplicate_action`)/제자리맴돌기(`no_progress`) 3중 정지 |
+| 1 | 입력 가드 | `coordinator.py:69`, `coordinator.py:96` | 범위 밖 질문이 검색까지 도달하는 것 → `out_of_scope`면 검색 0회로 즉시 END |
+| 2 | 추론 루프 가드 | `react_loop.py:94-138` | ReAct의 예산 초과(`budget_exhausted`)/반복(`duplicate_action`)/제자리맴돌기(`no_progress`) 3중 정지 (FAQ/design 경로. B형(`lecture_agent`)은 이 루프 대신 검색 1회로 고정) |
 | 3 | 출력 스키마 가드 | `presenter.py:53` | 파싱 불가능한 형태의 응답 → `get_structured_llm`(Pydantic `with_structured_output`) 강제 |
-| 4 | 출력 내용 가드 | `guardrail.py:68`(본 함수), `guardrail.py:111`(재시도 로직) | evidence에 없는 확정 표현/할루시네이션 → 규칙 우선 판정(`_rule_verdict`, `guardrail.py:39`) + 애매하면 LLM 검증 + `MAX_GUARDRAIL_RETRIES=1`회 재시도 후 안전 대체 응답 |
+| 4 | 출력 내용 가드 | `guardrail.py:92`(본 함수), `guardrail.py:131`(재시도 로직) | evidence에 없는 확정 표현/할루시네이션 → 규칙 우선 판정(`_rule_verdict`, `guardrail.py:58`) + 애매하면 intent별 LLM 검증(`faq`/`extract`는 엄격, `design`은 합성 허용) + `MAX_GUARDRAIL_RETRIES=1`회 재시도 후 안전 대체 응답 |
 
-보조적으로 `llm.py:56-59`의 `OUT_OF_CONTEXT_MESSAGE`/`FORBIDDEN_HEDGE_PHRASES`가 위 4번 가드(`guardrail.py`)와 평가 하네스(`eval/run_eval.py:231`)의 판정 기준으로 공용 사용된다.
+보조적으로 `llm.py:56-59`의 `OUT_OF_CONTEXT_MESSAGE`/`FORBIDDEN_HEDGE_PHRASES`가 위 4번 가드(`guardrail.py`)와 평가 하네스(`eval/run_eval.py:258`)의 판정 기준으로 공용 사용된다.
 
 ## 품질 평가 (E2E + LLM-as-Judge)
 
 `../test/`(run_scenarios.py·regression_faq.py)가 "배관이 실제로 동작하는가"를 확인하는 것과 달리,
-`eval/run_eval.py`는 `eval/cases.py`의 시나리오(FAQ/out_of_scope/design)를 실제 그래프로 끝까지 실행한 뒤
+`eval/run_eval.py`는 `eval/cases.py`의 시나리오(FAQ/out_of_scope/design/extract)를 실제 그래프로 끝까지 실행한 뒤
 **두 겹**으로 채점한다: ① 결정적 체크(라우팅 intent, 금지 표현, 근거 있으면 출처 인용/없으면 정직한 인정)와
 ② `eval/judge.py`의 LLM-as-Judge(같은 gpt-5-mini로 별도 호출해 `faithful`/`relevant`/1~5점 채점). 또한
 `observability.py`가 남긴 `OUTPUT_DIR/traces/{thread_id}.jsonl`을 파싱해 검색 스텝 수·react_loop 정지
@@ -109,8 +111,8 @@ python consultant_bot/eval/run_eval.py --update-baseline     # 이번 결과를 
 케이스별 답변·judge 판정·트레이스 요약은 `OUTPUT_DIR/eval_reports/{timestamp}.json`에 저장된다. 실제 OpenAI
 API를 호출하므로(그래프 실행 + judge 호출) 비용이 발생한다.
 
-`--only faq`/`--only out_of_scope`/`--only design`으로 각각 따로 돌리면 이 환경에서는 매번 끝까지 정상
-완료됨을 확인했다. 반면 `--only` 없이 네 케이스를 한 프로세스에서 전부 돌리면 위 "OMP: Error #15" 계열과
+`--only faq`/`--only out_of_scope`/`--only design`/`--only extract`으로 각각 따로 돌리면 이 환경에서는 매번
+끝까지 정상 완료됨을 확인했다. 반면 `--only` 없이 네 케이스를 한 프로세스에서 전부 돌리면 위 "OMP: Error #15" 계열과
 같은 종류의 네이티브 라이브러리 충돌로 모델 로딩 도중 간헐적으로 세그멘테이션 폴트(exit 139)가 날 수 있다
 (재현이 일정하지 않음 - `run_eval.py`가 만든 버그는 아니고, `app.py`/`server.py`에서 이미 겪은 것과 같은
 환경 이슈 계열). 안정적으로 돌리려면 당분간 `--only`로 나눠서 실행하는 것을 권장한다.
@@ -268,10 +270,46 @@ API를 호출하므로(그래프 실행 + judge 호출) 비용이 발생한다.
     제거해가며 남는 `.pdf` 언급이 있는지로 판정하도록 수정, 8케이스 전부 통과 확인. 전체 그래프 E2E는
     로컬 kiwipiepy 이슈로 미검증 — gcube 등 kiwipiepy가 정상 로드되는 환경에서 확인 필요
 
+- **2026-07-21**: `chat_log/Atype faq_and_chatbot_scenarios.md`에서 챗봇 시나리오를 A형(추론형 설계
+  컨설턴트)·B형(추출형 강의자료 Q&A) 이중 구조로 재설계한 것을 실제 코드에 반영:
+  - B형(`lecture_agent.py` 신규): "강의 내용 요약해줘 → 예시 코드 작성해줘 → 이 코드 해석해줘" 같은 짧은
+    연속 대화를 처리하는 7번째 그래프 노드 추가. `react_loop`의 반복 검색 대신 `hybrid_search` 1회만 호출하고
+    (B형 설계: "검색 1회 + 원문 재구성 없는 서술"), `state.extract_source`에 첫 턴에서 찾은 문서 파일명을
+    잠가 `retrieval.hybrid_search`의 신규 `source_filter` 인자로 이후 턴 검색 범위를 그 문서 하나로 좁힌다.
+    `coordinator.py`는 `state.intent`를 4지(`faq`/`design`/`extract`/`out_of_scope`)로 확장하고, 도메인
+    키워드가 없는 후속 턴("이 코드를 해석해줘")도 직전 턴이 `extract`였으면 최대 `EXTRACT_STICKY_LIMIT`(3)
+    턴까지 계속 `extract`로 라우팅하는 sticky 규칙을 추가했다.
+  - A형(위저드) 재조정: 기존 `guardrail.py`의 유일한 검증 프롬프트가 "근거 밖 확정 주장은 전부 실패"였는데,
+    이 기준을 그대로 쓰면 위저드가 원래 해야 할 일(개별 기술 정의를 조합해 "이 서비스엔 어떤 파이프라인이
+    맞는가"를 추천·비교하는 것)까지 근거 이탈로 오판해 차단할 위험이 있었다. `guardrail.py`를 `intent` 기반
+    분기로 바꿔 `faq`/`extract`는 기존 엄격 판정(`STRICT_VERDICT_PROMPT`)을, `design`은 "근거 사실을 조합한
+    새 추천/비교 판단은 허용하되 근거에 없는 기술 능력·사실을 지어내는 것만 차단"하는 신규
+    `SYNTHESIS_VERDICT_PROMPT`를 쓰도록 분리했다. `presenter.py`의 `pipeline_select`/`compare` 프롬프트에도
+    "근거를 조합해 새로운 판단을 스스로 추론하라"는 지시를 명시적으로 추가.
+  - `eval/cases.py`에 `EXTRACT_CASES`, `eval/run_eval.py`에 `--only extract`(interrupt 없는 순차 3턴 러너)
+    추가, `test/run_scenarios.py`에 `scenario_lecture_qa()`/`--only extract` 추가.
+  - `test/output_test` 인덱스로 A형(`--only design`)·B형(`--only extract`) 실측 검증 중 `guardrail._rule_verdict`
+    (인용 출처 문자열 대조 규칙)에서 실제 버그 2건 발견 및 수정: ① compare 단계처럼 같은 긴 한국어 파일명을
+    여러 번 반복 인용할 때 LLM이 단 한 글자만 오타내도(예: "허깅페이스"->"허깱페이스") 나머지 정상 인용까지
+    몽땅 "근거 밖 출처"로 오판해 재시도 2회를 다 태우고 안전 대체 응답으로 빠지던 문제 → 최소 한 번은 정확히
+    인용됐다면 규칙으로 확정 실패시키지 않고 LLM 검증으로 폴백하도록 수정. ② `lecture_agent`(B형) 단일 인용
+    응답에서 한 글자도 안 틀렸는데 실패 처리되는 사례 발견 → LLM이 화면상 동일한 한글을 완성형(NFC)이
+    아니라 자모 분해형(NFD)으로 생성해 문자열 비교가 깨진 것으로 확인, 비교 전 양쪽을
+    `unicodedata.normalize("NFC", ...)`로 정규화하도록 수정. 두 수정 모두 합성 데이터로 단위 검증 완료.
+  - 위 수정 반영 후 재검증 중, `lecture_agent`가 `faq_agent`의 FAQ 페르소나(`llm.SYSTEM_PROMPT`, "5문장
+    이내" 등 정의형 질문 전용 제약 포함)를 그대로 재사용하고 있어 요약처럼 분량이 필요한 요청을 근거가
+    충분한데도 회피하는 현상을 발견 — `lecture_agent.py`에 분량 제약 없는 별도 `EXTRACT_SYSTEM_PROMPT`를
+    추가해 교체.
+
 ## 알려진 한계 / 다음 단계
 
 - 통합 테스트(`../test/`)는 PDF 1개짜리 인덱스 기준이라 커버리지가 제한적 — 자세한 실행법은
   [`../test/README.md`](../test/README.md) 참고. `eval/run_eval.py`도 같은 인덱스를 기본값으로 쓰므로 동일한
   제약을 공유한다.
-- FAQ 페르소나 `SYSTEM_PROMPT`는 `faq_agent.py` 경로에만 적용된다 — Wizard/Presenter 경로는 별도의 구조화
-  출력 프롬프트를 그대로 쓰며 톤/페르소나를 공유하지 않는다.
+- FAQ 페르소나 `SYSTEM_PROMPT`(`llm.py`)는 `faq_agent.py` 경로에만 적용된다. `lecture_agent.py`(B형)는 별도의
+  `EXTRACT_SYSTEM_PROMPT`를 쓴다 — FAQ 페르소나의 "5문장 이내" 등 정의형 질문 전용 제약을 그대로 씌우면
+  실측 검증(2026-07-21)에서 요약처럼 분량이 필요한 요청까지 근거가 충분한데도 위축돼 회피 응답을 내는
+  현상이 관찰됐기 때문. Wizard/Presenter 경로는 이 둘과도 다른 구조화 출력 프롬프트를 쓴다.
+- `lecture_agent.py`(B형)는 v1에서 캐시가 없다 — 3턴 안팎의 짧은 교환이라 FAQ류 반복 질문 캐싱 이득이 작고,
+  임베딩 유사도 캐시가 "예시 코드 작성해줘" 같은 모호한 후속 질문을 다른 문서와 혼동시킬 위험이 더 크다고
+  판단했다.

@@ -95,6 +95,31 @@ def _run_faq_or_oos_case(case: dict, harness, output_dir: Path) -> dict:
     }
 
 
+def _run_extract_case(case: dict, harness, output_dir: Path) -> dict:
+    """B형(extract)은 interrupt() 없는 일반 대화 턴이라, design과 달리 위저드 재개 루프가 필요 없다 —
+    case['questions']에 든 턴들을 그대로 순차 invoke하면 된다(coordinator의 sticky 라우팅이 이어준다)."""
+    graph = harness.get_graph()
+    thread_id = f"eval-{case['id']}-{uuid4()}"
+    config = harness.make_run_config(thread_id)
+
+    result = None
+    for question in case["questions"]:
+        result = harness.run_turn(graph, config, text=question)
+
+    values = graph.get_state(config).values
+    messages = result.get("messages", [])
+    answer = str(messages[-1].content) if messages else ""
+    return {
+        "id": case["id"],
+        "question": case["questions"][-1],
+        "intent": values.get("intent"),
+        "answer": answer,
+        "evidence": values.get("evidence", []),
+        "turns": len(case["questions"]),
+        "trace": _trace_summary(output_dir, thread_id),
+    }
+
+
 def _run_design_case(case: dict, harness, output_dir: Path, max_turns: int = 3) -> dict:
     graph = harness.get_graph()
     thread_id = f"eval-{case['id']}-{uuid4()}"
@@ -138,7 +163,7 @@ def _deterministic_checks(case: dict, run: dict, forbidden_hedge, out_of_context
             not run["evidence"],
             f"evidence={len(run['evidence'])}건 (0건 기대, 검색을 아예 타지 않아야 함)",
         )
-    elif case["expected_intent"] == "faq":
+    elif case["expected_intent"] in ("faq", "extract"):
         if not run["evidence"]:
             checks["honesty"] = (
                 run["answer"].strip() == out_of_context_message,
@@ -213,7 +238,9 @@ def main() -> int:
     parser.add_argument("--output-dir", default=None, help="인덱스가 있는 OUTPUT_DIR (기본: test/output_test)")
     parser.add_argument("--min-score", type=float, default=3.0, help="judge 평균 점수(1~5) 최저 통과선")
     parser.add_argument("--update-baseline", action="store_true", help="이번 결과를 새 기준선으로 저장")
-    parser.add_argument("--only", choices=["faq", "out_of_scope", "design"], default=None, help="해당 종류만 실행")
+    parser.add_argument(
+        "--only", choices=["faq", "out_of_scope", "design", "extract"], default=None, help="해당 종류만 실행"
+    )
     args = parser.parse_args()
 
     output_dir = _resolve_output_dir(args.output_dir)
@@ -230,7 +257,7 @@ def main() -> int:
     from langgraph.types import Command  # noqa: E402
     from llm import FORBIDDEN_HEDGE_PHRASES, OUT_OF_CONTEXT_MESSAGE  # noqa: E402
 
-    from cases import DESIGN_CASES, FAQ_CASES, OUT_OF_SCOPE_CASES  # noqa: E402
+    from cases import DESIGN_CASES, EXTRACT_CASES, FAQ_CASES, OUT_OF_SCOPE_CASES  # noqa: E402
     from judge import judge_answer  # noqa: E402
 
     def run_turn(graph, config, text: str = None, resume=None):
@@ -258,6 +285,7 @@ def main() -> int:
     faq_cases = FAQ_CASES if args.only in (None, "faq") else []
     oos_cases = OUT_OF_SCOPE_CASES if args.only in (None, "out_of_scope") else []
     design_cases = DESIGN_CASES if args.only in (None, "design") else []
+    extract_cases = EXTRACT_CASES if args.only in (None, "extract") else []
 
     cases_run = []
     for case in faq_cases + oos_cases:
@@ -268,6 +296,12 @@ def main() -> int:
 
     for case in design_cases:
         run = _run_design_case(case, harness, output_dir)
+        run["checks"] = _deterministic_checks(case, run, FORBIDDEN_HEDGE_PHRASES, OUT_OF_CONTEXT_MESSAGE)
+        run["judge"] = judge_answer(run["question"], run["answer"], run["evidence"])
+        cases_run.append(run)
+
+    for case in extract_cases:
+        run = _run_extract_case(case, harness, output_dir)
         run["checks"] = _deterministic_checks(case, run, FORBIDDEN_HEDGE_PHRASES, OUT_OF_CONTEXT_MESSAGE)
         run["judge"] = judge_answer(run["question"], run["answer"], run["evidence"])
         cases_run.append(run)

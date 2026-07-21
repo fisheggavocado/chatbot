@@ -80,19 +80,26 @@ def _get_retriever() -> QueryFusionRetriever:
     return _retriever
 
 
-def hybrid_search(query: str, top_k: int = RERANK_TOP_K) -> List[Evidence]:
+def hybrid_search(query: str, top_k: int = RERANK_TOP_K, source_filter: str | None = None) -> List[Evidence]:
     """bi-encoder(BGE-M3)+BM25를 RRF로 융합한 후보를 cross-encoder로 재정렬해 top_k개의 근거를 반환한다.
 
     동일 쿼리(정규화 기준)로 이전에 검색한 적이 있으면 디스크 캐시(cache.SearchCache)에서 즉시 반환한다
     — 세션이 끊겼다 재개되거나, 다른 노드가 같은 문구로 검색할 때 재계산을 피한다.
+
+    source_filter: lecture_agent(B형)가 단일 문서 범위로 검색을 좁힐 때 쓴다. 지정하면 이 출처(PDF 파일명)와
+    일치하지 않는 후보를 rerank 전에 제거한다. 필터 유무에 따라 결과가 달라지므로 캐시 키에도 포함시켜,
+    같은 질의라도 필터가 다르면 서로 다른 캐시 항목으로 취급한다.
     """
-    cached = search_cache.get(query)
+    cache_key = f"{source_filter}::{query}" if source_filter else query
+    cached = search_cache.get(cache_key)
     if cached is not None:
-        print(f"[retrieval] 캐시 히트: '{query}' -> {len(cached)}건 (재검색 생략)")
+        print(f"[retrieval] 캐시 히트: '{cache_key}' -> {len(cached)}건 (재검색 생략)")
         return [Evidence(**e) for e in cached[:top_k]]
 
     retriever = _get_retriever()
     candidates = retriever.retrieve(query)
+    if source_filter:
+        candidates = [c for c in candidates if c.node.metadata.get("source") == source_filter]
     # RRF 융합 결과는 이미 점수 내림차순 정렬이므로, 상위 RERANK_CANDIDATE_LIMIT개만 골라
     # cross-encoder에 넣는다 - 가장 비용이 큰 연산의 대상 수를 줄여 속도를 아낀다.
     results = cross_encoder_rerank(query, candidates[:RERANK_CANDIDATE_LIMIT], top_k)
@@ -109,7 +116,7 @@ def hybrid_search(query: str, top_k: int = RERANK_TOP_K) -> List[Evidence]:
             )
         )
 
-    search_cache.put(query, evidence)
+    search_cache.put(cache_key, evidence)
     return evidence
 
 

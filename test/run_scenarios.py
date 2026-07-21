@@ -93,6 +93,29 @@ def scenario_out_of_scope(question: str) -> None:
         print(f"[답변] {messages[-1].content}")
 
 
+def scenario_lecture_qa(questions: list[str]) -> None:
+    """B형(extract) 시나리오. design과 달리 interrupt()가 없는 일반 대화 턴이라, 질문 리스트를 그대로
+    순차 invoke하면 coordinator의 sticky 라우팅이 턴을 이어준다."""
+    print("\n" + "#" * 70)
+    print(f"[시나리오: extract/B형] 질문들: {questions}")
+    print("#" * 70)
+    graph = get_graph()
+    thread_id = f"test-extract-{uuid4()}"
+    config = make_run_config(thread_id)
+
+    result = None
+    for i, question in enumerate(questions, start=1):
+        result = _run_turn(graph, config, text=question)
+        intent = graph.get_state(config).values.get("intent")
+        messages = result.get("messages", [])
+        print(f"\n[{i}턴] 질문: {question}")
+        print(f"  intent={intent}")
+        if messages:
+            print(f"  답변: {messages[-1].content}")
+
+    print(f"\n[trace] {TEST_OUTPUT_DIR}/traces/{thread_id}.jsonl 에서 상세 로그 확인 가능")
+
+
 def scenario_design_wizard(question: str, max_turns: int = 3) -> None:
     print("\n" + "#" * 70)
     print(f"[시나리오: design 위저드] 질문: {question}")
@@ -129,7 +152,7 @@ def main() -> None:
     parser.add_argument("--design-question", default="AI 챗봇 파이프라인을 어떻게 설계하면 좋을지 추천해줘")
     parser.add_argument("--oos-question", default="오늘 저녁 메뉴 추천해줘")
     parser.add_argument(
-        "--only", choices=["faq", "out_of_scope", "design"], default=None, help="지정하면 해당 시나리오만 실행"
+        "--only", choices=["faq", "out_of_scope", "design", "extract"], default=None, help="지정하면 해당 시나리오만 실행"
     )
     args = parser.parse_args()
 
@@ -139,6 +162,14 @@ def main() -> None:
         scenario_out_of_scope(args.oos_question)
     if args.only in (None, "design"):
         scenario_design_wizard(args.design_question)
+    if args.only in (None, "extract"):
+        scenario_lecture_qa(
+            [
+                "Hugging Face Pipeline 강의 내용을 요약해줘",
+                "관련된 예시 코드 중 하나를 작성해줘",
+                "이 코드를 해석해줘",
+            ]
+        )
 
     print("\n" + "=" * 70)
     print("모든 시나리오 실행 완료.")
