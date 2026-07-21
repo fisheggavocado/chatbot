@@ -69,16 +69,16 @@ HF `embedding/`에 백업돼 있으면 **재임베딩 없이 바로 이 챗봇(F
 
 | 프롬프트 | 파일:줄 | 용도 |
 |---|---|---|
-| `SYSTEM_PROMPT` | `llm.py:61` | FAQ Agent 페르소나(역할/답변 원칙/출력 형식) — `faq_agent.py:65`에서 `SystemMessage`로 적용 |
+| `SYSTEM_PROMPT` | `llm.py:61` | FAQ Agent 페르소나(역할/답변 원칙/출력 형식) — `faq_agent.py:67`에서 `SystemMessage`로 적용 |
 | `OUT_OF_CONTEXT_MESSAGE` | `llm.py:56` | 근거 부족 시 정직한 안내 문구 (faq_agent·guardrail 공용 상수) |
 | `FORBIDDEN_HEDGE_PHRASES` | `llm.py:59` | 금지 헤지 표현 목록 (평가 하네스의 결정적 체크용) |
 | `ANSWER_PROMPT` | `faq_agent.py:24` | 근거 기반 "정의→사용 상황→출처" 답변 생성 프롬프트 (FAQ, 1턴) |
-| `EXTRACT_ANSWER_PROMPT` | `lecture_agent.py:18` | 근거 기반 요약/예시/해석 답변 생성 프롬프트 (B형, 이전 답변 참조 포함) |
+| `EXTRACT_ANSWER_PROMPT` | `lecture_agent.py:33` | 근거 기반 요약/예시/해석 답변 생성 프롬프트 (B형, 이전 답변 참조 포함) |
 | `REFLECT_PROMPT` | `react_loop.py:23` | bounded-ReAct의 Reflect(다음 액션 판단) 단계 프롬프트 |
 | `PROMPTS` (dict) | `presenter.py:15` | stage별(tech_select/pipeline_select/compare) 구조화 출력 프롬프트. pipeline_select/compare는 근거 사실을 조합한 합성 판단을 명시적으로 요구 |
 | 의도 분류 프롬프트 (인라인) | `coordinator.py:84` | 규칙 기반 분류가 애매할 때 LLM 폴백용 faq/design/extract/out_of_scope 4지 분류 프롬프트 |
-| `STRICT_VERDICT_PROMPT` | `guardrail.py:22` | faq/extract 경로용 — 근거 밖 확정 단언이면 무엇이든 실패 판정 |
-| `SYNTHESIS_VERDICT_PROMPT` | `guardrail.py:36` | design 경로용 — 근거 사실을 조합한 합성 판단은 허용, 사실 날조만 실패 판정 |
+| `STRICT_VERDICT_PROMPT` | `guardrail.py:24` | faq/extract 경로용 — 근거 밖 확정 단언이면 무엇이든 실패 판정 |
+| `SYNTHESIS_VERDICT_PROMPT` | `guardrail.py:38` | design 경로용 — 근거 사실을 조합한 합성 판단은 허용, 사실 날조만 실패 판정 |
 | `JUDGE_PROMPT` | `eval/judge.py:16` | LLM-as-Judge 평가용 프롬프트 (품질 평가 하네스 전용, 런타임 아님) |
 
 ## 가드레일 위치 (4지점)
@@ -87,8 +87,8 @@ HF `embedding/`에 백업돼 있으면 **재임베딩 없이 바로 이 챗봇(F
 |---|---|---|---|
 | 1 | 입력 가드 | `coordinator.py:69`, `coordinator.py:96` | 범위 밖 질문이 검색까지 도달하는 것 → `out_of_scope`면 검색 0회로 즉시 END |
 | 2 | 추론 루프 가드 | `react_loop.py:94-138` | ReAct의 예산 초과(`budget_exhausted`)/반복(`duplicate_action`)/제자리맴돌기(`no_progress`) 3중 정지 (FAQ/design 경로. B형(`lecture_agent`)은 이 루프 대신 검색 1회로 고정) |
-| 3 | 출력 스키마 가드 | `presenter.py:53` | 파싱 불가능한 형태의 응답 → `get_structured_llm`(Pydantic `with_structured_output`) 강제 |
-| 4 | 출력 내용 가드 | `guardrail.py:92`(본 함수), `guardrail.py:131`(재시도 로직) | evidence에 없는 확정 표현/할루시네이션 → 규칙 우선 판정(`_rule_verdict`, `guardrail.py:58`) + 애매하면 intent별 LLM 검증(`faq`/`extract`는 엄격, `design`은 합성 허용) + `MAX_GUARDRAIL_RETRIES=1`회 재시도 후 안전 대체 응답 |
+| 3 | 출력 스키마 가드 | `presenter.py:58` | 파싱 불가능한 형태의 응답 → `get_structured_llm`(Pydantic `with_structured_output`) 강제 |
+| 4 | 출력 내용 가드 | `guardrail.py:154`(본 함수), `guardrail.py:195`(재시도 로직) | evidence에 없는 확정 표현/할루시네이션 → 규칙 우선 판정(`_rule_verdict`, `guardrail.py:79`) + 애매하면 intent별 LLM 검증(`faq`/`extract`는 엄격, `design`은 합성 허용) + `MAX_GUARDRAIL_RETRIES=1`회 재시도 후 안전 대체 응답 |
 
 보조적으로 `llm.py:56-59`의 `OUT_OF_CONTEXT_MESSAGE`/`FORBIDDEN_HEDGE_PHRASES`가 위 4번 가드(`guardrail.py`)와 평가 하네스(`eval/run_eval.py:258`)의 판정 기준으로 공용 사용된다.
 
