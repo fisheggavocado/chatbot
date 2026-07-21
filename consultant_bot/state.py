@@ -71,7 +71,13 @@ class TechSelectOutput(BaseModel):
 
 class PipelineOption(BaseModel):
     name: str
-    steps: list[str]
+    steps: list[str] = Field(
+        description=(
+            "사용자 요청 1건이 시스템에 입력되어 응답이 나가기까지 거치는 런타임 처리 순서"
+            "(예: '질문 입력 -> 하이브리드 검색 -> 근거로 답변 생성'). 모델 준비·파인튜닝·배포 같은 "
+            "구축/설치 절차가 아니라, 실행 중 요청이 통과하는 단계여야 한다."
+        )
+    )
     source: str
 
 
