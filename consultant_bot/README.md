@@ -65,6 +65,31 @@ HF `embedding/`에 백업돼 있으면 **재임베딩 없이 바로 이 챗봇(F
 | `static/index.html` | 바닐라 JS 브라우저 채팅 UI (빌드 불필요, `server.py`의 `/chat/message`·`/chat/resume`만 호출) |
 | `eval/` | E2E + LLM-as-Judge 평가 하네스 (`eval/run_eval.py`) — 아래 "품질 평가" 참고 |
 
+## 프롬프트 위치
+
+| 프롬프트 | 파일:줄 | 용도 |
+|---|---|---|
+| `SYSTEM_PROMPT` | `llm.py:61` | FAQ Agent 페르소나(역할/답변 원칙/출력 형식) — `faq_agent.py:65`에서 `SystemMessage`로 적용 |
+| `OUT_OF_CONTEXT_MESSAGE` | `llm.py:56` | 근거 부족 시 정직한 안내 문구 (faq_agent·guardrail 공용 상수) |
+| `FORBIDDEN_HEDGE_PHRASES` | `llm.py:59` | 금지 헤지 표현 목록 (평가 하네스의 결정적 체크용) |
+| `ANSWER_PROMPT` | `faq_agent.py:24` | 근거 기반 "정의→사용 상황→출처" 답변 생성 프롬프트 |
+| `REFLECT_PROMPT` | `react_loop.py:23` | bounded-ReAct의 Reflect(다음 액션 판단) 단계 프롬프트 |
+| `PROMPTS` (dict) | `presenter.py:15` | stage별(tech_select/pipeline_select/compare) 구조화 출력 프롬프트, 46번 줄에서 `.format()` 호출 |
+| 의도 분류 프롬프트 (인라인) | `coordinator.py:59` | 규칙 기반 분류가 애매할 때 LLM 폴백용 faq/design/out_of_scope 분류 프롬프트 |
+| `VERDICT_PROMPT` | `guardrail.py:18` | 출력이 근거 밖 내용을 확정 단언하는지 검증하는 프롬프트 |
+| `JUDGE_PROMPT` | `eval/judge.py:16` | LLM-as-Judge 평가용 프롬프트 (품질 평가 하네스 전용, 런타임 아님) |
+
+## 가드레일 위치 (4지점)
+
+| # | 가드 지점 | 파일:줄 | 막는 대상 |
+|---|---|---|---|
+| 1 | 입력 가드 | `coordinator.py:46`, `coordinator.py:65` | 범위 밖 질문이 검색까지 도달하는 것 → `out_of_scope`면 검색 0회로 즉시 END |
+| 2 | 추론 루프 가드 | `react_loop.py:94-138` | ReAct의 예산 초과(`budget_exhausted`)/반복(`duplicate_action`)/제자리맴돌기(`no_progress`) 3중 정지 |
+| 3 | 출력 스키마 가드 | `presenter.py:53` | 파싱 불가능한 형태의 응답 → `get_structured_llm`(Pydantic `with_structured_output`) 강제 |
+| 4 | 출력 내용 가드 | `guardrail.py:68`(본 함수), `guardrail.py:111`(재시도 로직) | evidence에 없는 확정 표현/할루시네이션 → 규칙 우선 판정(`_rule_verdict`, `guardrail.py:39`) + 애매하면 LLM 검증 + `MAX_GUARDRAIL_RETRIES=1`회 재시도 후 안전 대체 응답 |
+
+보조적으로 `llm.py:56-59`의 `OUT_OF_CONTEXT_MESSAGE`/`FORBIDDEN_HEDGE_PHRASES`가 위 4번 가드(`guardrail.py`)와 평가 하네스(`eval/run_eval.py:231`)의 판정 기준으로 공용 사용된다.
+
 ## 품질 평가 (E2E + LLM-as-Judge)
 
 `../test/`(run_scenarios.py·regression_faq.py)가 "배관이 실제로 동작하는가"를 확인하는 것과 달리,
@@ -214,6 +239,34 @@ API를 호출하므로(그래프 실행 + judge 호출) 비용이 발생한다.
 - **2026-07-21**: `server.py`에 `GET /` 추가 — `static/index.html`(바닐라 JS, 빌드 없음)을 서빙해 gcube
   워크로드의 공개 URL을 그냥 열면 브라우저에서 바로 대화할 수 있게 함. 기존 `/chat/message`·`/chat/resume`
   API를 그대로 호출하므로 서버 쪽 로직 변경은 없음
+- **2026-07-21**: gcube 실사용 중 design 질문에서 `langgraph.errors.GraphRecursionError`(recursion_limit=8)
+  발생 확인 — guardrail 재시도가 한 번만 걸려도(research_worker→wizard_supervisor→presenter→guardrail 4단계
+  추가) happy path(6~7단계)만 겨우 맞던 8을 넘긴다는 걸 트레이스로 확인. 다만 근본 원인은 recursion 여유가
+  아니라 "설계/FAQ 응답 자체가 느려서 재시도가 잦다"는 쪽으로 판단해 `recursion_limit`은 8로 유지하고
+  속도 개선 쪽을 먼저 손대기로 함.
+- **2026-07-21**: 응답 지연 원인 진단 — FAQ/design 둘 다 `hybrid_search`(BGE-M3 임베딩+BM25+cross-encoder
+  리랭킹 30건)와 reasoning 모델(gpt-5-mini) structured-output 호출(reflect/presenter/guardrail)이 완전
+  직렬로 여러 번 이어지는 구조라 정상 답변 케이스조차 순차 LLM 호출 3회 이상을 거침을 확인. 병렬화는 대부분
+  단계 간 데이터 의존성(앞 단계 출력이 다음 단계 입력) 때문에 적용 불가하다고 판단하고, 대신 다음 3가지를
+  적용:
+  - `config.py`/`retrieval.py`: cross-encoder 리랭킹 대상을 `CANDIDATE_TOP_K`(30, RRF 융합 풀) 전체가 아니라
+    RRF 점수 상위 `RERANK_CANDIDATE_LIMIT`(15)개로 축소 — RRF가 이미 점수 내림차순 정렬이라(LlamaIndex 소스
+    확인) 정확도 손실 없이 리랭커 연산량만 절반 가까이 감소
+  - `react_loop.py`: reflect 단계에 규칙 우선 판정(`_rule_sufficient`) 추가 — 이번 라운드 근거의 리랭커
+    점수 상위 2건이 `RULE_SUFFICIENT_SCORE`(0.5) 이상이면 `reflect_llm` 호출 없이 즉시 종료, 애매할 때만
+    기존처럼 LLM 폴백(coordinator.py의 "규칙 우선, 애매하면 LLM" 패턴과 동일). FAQ/design이 이 엔진을
+    공유하므로 FAQ는 대부분 1라운드(reflect LLM 호출 0회)로 끝나되, 루프 자체는 유지해 첫 검색이 애매한
+    질문에 대한 안전망은 보존
+  - `guardrail.py`: verdict에도 같은 패턴으로 `_rule_verdict` 추가 — 응답에 인용된 `.pdf` 출처가 evidence
+    목록과 일치하면 규칙으로 즉시 `passed=True/False`, 인용을 못 찾는 애매한 경우만 기존 `VERDICT_PROMPT`
+    LLM 검증으로 폴백
+  - 커밋 직후 kiwipiepy가 로컬 Windows에서 DLL 로딩 정책에 막혀 `eval/run_eval.py`를 못 돌리는 걸 확인해,
+    kiwipiepy를 더미로 스텁하고 `_rule_sufficient`/`_rule_verdict`만 격리 단위 테스트(8케이스)로 검증하는
+    과정에서 **실제 버그 발견**: `_rule_verdict`가 정규식(`\S+?\.pdf`)으로 출처를 추출했는데, 한국어 PDF
+    파일명은 공백을 포함해서(`허깅페이스 개요 및 생태계 이해.pdf`) 마지막 단어만 잘려 정상 인용까지
+    "근거 밖 출처"로 오판하는 상태였음 → 정규식 대신 evidence의 전체 출처 문자열을 텍스트에서 통째로
+    제거해가며 남는 `.pdf` 언급이 있는지로 판정하도록 수정, 8케이스 전부 통과 확인. 전체 그래프 E2E는
+    로컬 kiwipiepy 이슈로 미검증 — gcube 등 kiwipiepy가 정상 로드되는 환경에서 확인 필요
 
 ## 알려진 한계 / 다음 단계
 
