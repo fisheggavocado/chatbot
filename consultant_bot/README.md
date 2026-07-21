@@ -301,6 +301,37 @@ API를 호출하므로(그래프 실행 + judge 호출) 비용이 발생한다.
     충분한데도 회피하는 현상을 발견 — `lecture_agent.py`에 분량 제약 없는 별도 `EXTRACT_SYSTEM_PROMPT`를
     추가해 교체.
 
+- **2026-07-21**: "mcp가 뭐야"/"rag가 뭐야" 등 도메인 질문이 매번 `OUT_OF_CONTEXT_MESSAGE`로 빠지는 문제를
+  진단 — `coordinator.py`의 라우팅(`intent=faq`)은 정상이었고, 원인은 `../output/docstore.json`에 인덱싱된
+  텍스트 자체가 깨져 있던 것. 상위 폴더(`pdf_reader.py`)의 `extract_page_text()`가 일부 PDF(서브셋 임베딩
+  폰트라 ToUnicode/cmap이 불완전)에서 한글 완성형 대신 에티오피아·인도계 문자 등 이 강의 자료에 나올 수 없는
+  스크립트로 잘못 디코딩하는데, `llama_pdf_reader.py`의 비전 API 폴백 분기가 텍스트 **길이**만 보고 **내용**은
+  검사하지 않아 이런 페이지를 "텍스트 충분함"으로 오판해 그대로 인덱싱하고 있었다.
+  - `pdf_reader.py`: 정상 텍스트에 나올 수 없는 스크립트 블록(한글 자모 단독, 에티오피아·크메르·남아시아 문자
+    등)을 검사하는 `has_corrupted_encoding()` 추가.
+  - `llama_pdf_reader.py`: 텍스트 길이 부족 조건에 `has_corrupted_encoding()` 결과를 OR로 추가 — 걸리면
+    스캔 페이지와 동일하게 비전 API(gpt-5-mini)로 전체 재추출.
+  - 기존 인덱스 재스캔 결과 35페이지(`6-1. 실무형 MCP 서버 완성과 연계.pdf` 33페이지 + 2개 자료 각 1페이지)가
+    깨져 있었음 → 전체 재임베딩(수 시간) 대신, 상위 폴더에 일회성 `repair_corrupted_pages.py`를 작성해 깨진
+    페이지만 비전 API로 재추출하고 해당 노드만 교체(수 분 내 완료, 미해결 0건). 재검증 결과 "mcp가 뭐야" 검색
+    최고 점수가 0.0045 → 0.977로 정상화(`rag가 뭐야`는 원래도 정상). "파이프라인이 뭐야"는 이 복구 대상이
+    아니었고 복구 후에도 점수가 낮게 나와(0.058) — 인코딩 문제가 아니라 자료에 "파이프라인"이라는 표현으로
+    명시적으로 정의된 부분이 없어서 생기는 별도의 검색 관련도 이슈로 확인, 아직 미해결.
+  - 인덱스 수정 후 `hf_storage.upload_output_to_hf()`로 HF Dataset(`embedding/`)에 재업로드하는 과정에서
+    **배포본을 두 번 실제로 장애 냄** — 둘 다 이 함수가 `OUTPUT_DIR` 전체를 필터 없이 올려서 생긴 문제:
+    1) 로컬 개발 머신의 `consultant_bot_checkpoints.sqlite`(+`-wal`/`-shm`)가 같이 올라가 `embedding/`에
+       섞였고, 다음 `restore_output_from_hf()`가 `shutil.copy2`로 이걸 정상 배포 체크포인트 위에 덮어써
+       `sqlite3.DatabaseError: database disk image is malformed`로 챗봇 전체가 500 에러를 내기 시작함.
+    2) 로컬 `traces/` 세션 로그 폴더까지 같이 올라갔는데, `restore_output_from_hf()`는 `embedding/`의 최상위
+       항목을 전부 파일로 가정하고 `shutil.copy2`를 호출해 디렉터리를 만나면 `IsADirectoryError`로 죽음 —
+       이 경로가 `hybrid_search` → `_ensure_index_available()`에서 매 검색 요청마다 지나가는 자리라 **검색
+       기능 전체**가 막힘.
+    HF의 `embedding/`에서 두 문제의 원인 파일들을 삭제해 응급 복구하고, `hf_storage.py`를 근본 수정: ①
+    `upload_output_to_hf()`에 `ignore_patterns=["consultant_bot_checkpoints.sqlite*", "traces/*", "traces"]`
+    추가(체크포인트의 정본 위치는 별도의 `checkpoints/` 경로), ② `restore_output_from_hf()`가 파일이 아닌
+    항목은 크래시 대신 건너뛰고 경고만 남기도록 방어 코드 추가 — 앞으로 `OUTPUT_DIR`에 뭐가 더 섞여도 검색
+    경로 전체가 죽는 일은 없도록 함.
+
 ## 알려진 한계 / 다음 단계
 
 - 통합 테스트(`../test/`)는 PDF 1개짜리 인덱스 기준이라 커버리지가 제한적 — 자세한 실행법은
@@ -313,3 +344,7 @@ API를 호출하므로(그래프 실행 + judge 호출) 비용이 발생한다.
 - `lecture_agent.py`(B형)는 v1에서 캐시가 없다 — 3턴 안팎의 짧은 교환이라 FAQ류 반복 질문 캐싱 이득이 작고,
   임베딩 유사도 캐시가 "예시 코드 작성해줘" 같은 모호한 후속 질문을 다른 문서와 혼동시킬 위험이 더 크다고
   판단했다.
+- "파이프라인이 뭐야" 같은 질문은 인코딩 손상 복구(2026-07-21) 이후에도 검색 최고 점수가 낮다(~0.058,
+  `RULE_SUFFICIENT_SCORE` 0.5에 못 미침) — 자료에 해당 개념이 흩어져 있지만 "파이프라인"이라는 표현으로
+  명시적으로 정의된 슬라이드가 없어서인 것으로 추정된다. 임베딩/인덱싱 문제가 아니라 질의-문서 표현 격차
+  (재현/추론이 필요한 케이스)로 보이며 아직 미해결.
