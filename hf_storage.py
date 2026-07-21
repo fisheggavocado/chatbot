@@ -52,6 +52,11 @@ def upload_output_to_hf(output_dir: str = OUTPUT_DIR) -> None:
         repo_id=HF_REPO_ID,
         repo_type="dataset",
         path_in_repo=OUTPUT_PATH_IN_REPO,
+        # consultant_bot의 대화 체크포인트(sqlite)는 CHECKPOINT_PATH_IN_REPO("checkpoints/")가 정본 위치다.
+        # OUTPUT_DIR에는 이 파일도 함께 있어서 걸러주지 않으면 embedding/에도 섞여 올라가고,
+        # 다음 restore_output_from_hf()가 shutil.copy2로 정상 체크포인트를 이걸로 덮어써버린다
+        # (실제로 한 번 이 문제로 배포본의 대화 체크포인트가 손상된 적 있음).
+        ignore_patterns=["consultant_bot_checkpoints.sqlite*"],
     )
     print(
         f"[업로드 완료] '{output_dir}' -> "
