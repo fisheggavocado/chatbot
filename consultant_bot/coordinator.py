@@ -13,15 +13,15 @@ from llm import get_structured_llm
 from observability import log_event
 from state import IntentDecision, WizardState
 
-FAQ_MARKERS = ("란?", "이란", "뭐야", "무엇", "정의가", "머야", "차이가", "차이는")
+FAQ_MARKERS = ("란?", "이란", "뭐야", "무엇", "정의가", "머야", "차이가", "차이는", "원리는", "원리가", "개념", "정의")
 DESIGN_MARKERS = ("설계", "만들고 싶", "만들어", "구성해", "구축", "파이프라인 추천", "아키텍처", "추천해")
 # 강의 자료가 "에이전트 설계"뿐 아니라 Hugging Face 생태계·LLM/챗봇 구축 전반을 다루므로 넓게 잡는다.
 DOMAIN_KEYWORDS = (
     "agent", "에이전트", "llm", "sllm", "rag", "임베딩", "embedding", "벡터", "vector", "bm25",
-    "리트리버", "retriever", "langgraph", "langchain", "가드레일", "guardrail", "reAct",
-    "react", "프롬프트", "prompt", "파이프라인", "체인", "chain", "멀티 에이전트", "supervisor",
+    "리트리버", "retriever", "langgraph", "langchain", "가드레일", "guardrail", "react", "reAct", "langmanus", "rag", "RAG", 
+    "react", "프롬프트", "prompt", "파이프라인", "pipeline", "체인", "chain", "멀티 에이전트", "supervisor", 
     "허깅페이스", "hugging face", "huggingface", "허브", "hub", "모델", "model", "데이터셋", "dataset",
-    "토크나이저", "tokenizer", "트랜스포머", "transformer", "파인튜닝", "fine-tuning", "챗봇", "chatbot", "mcp",
+    "토크나이저", "tokenizer", "트랜스포머", "transformer", "파인튜닝", "fine-tuning", "챗봇", "chatbot", "mcp", "MCP",
     "openai", "gpt", "ai",
 )
 OUT_OF_SCOPE_MESSAGE = (
